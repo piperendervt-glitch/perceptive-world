@@ -1,0 +1,2 @@
+# Claude Code local settings (per-user, not repo-shared)
+.claude/settings.local.json
