@@ -1,2 +1,7 @@
 # Claude Code local settings (per-user, not repo-shared)
 .claude/settings.local.json
+
+# Phase 0 QA gate test — throwaway, superseded by qa_deterministic.py.
+# Kept on disk for reference (rerun with different models / prompts) but
+# not part of the versioned tree.
+qa_local_test.py

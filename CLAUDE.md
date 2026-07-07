@@ -39,16 +39,22 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 
 ## CURRENT_MILESTONE
 
-**B1: 決定点で 2〜4 個の選択肢を構造出力する。各選択肢は status.yaml と invariants で実行可能性を検証。分岐はしない。**
+**Q1: qa_deterministic.py に CODE 項目（C-9.3 / C-9.6 / C-11.1 / C-11.3）を実装。LLM は呼ばない。**
 
-### DONE 条件（B1）
+### DONE 条件（Q1）
 
-- [ ] writer 定義に decision ブロック（id / prompt / options / requires / intended_shift）の出力仕様と、選択肢に関する規律が明記されている。
-- [ ] consistency_checklist.md に C-11（選択肢検査）が追加され、requires 充足性・invariants 適合・個数 2〜4・飾り選択検出・可視性適用の各項目を検査できる。
-- [ ] 検証用の薄い1話を1つだけ通し、決定点を 1 個置いて decision ブロックが出力されている（分岐は行わない）。
-- [ ] 意図的な違反版（実行不能な選択肢・飾りの重複選択肢・invariants 違反の選択肢）を投入し、C-11 が Major / Warning / Blocker で検出することを QA レポートに記録している。
-- [ ] git commit 後、`vB.1` タグが打たれている。
-- 注: B1 検証話でもドラマQA は必須にしない（Step A の検証話に準じた例外）。本番エピソード（M2 以降）では引き続き両方 PASS が必要。
+- [ ] `qa_deterministic.py` に 4 つの CODE 項目が実装され、LLM を一切呼ばずに JSON/表形式で判定を返す。
+- [ ] 同じ入力に対して常に同じ結果（temperature も乱数もない）。
+- [ ] decision ブロックと status_delta のパーサが writer 出力の YAML を読める。壊れた入力は明示エラー。
+- [ ] B1 の**違反版**（story/ep-00-b1test-violation.md）で `C-11.1=Major`（MP 不足）を検出する。
+- [ ] B1 の**正しい版**（story/ep-00-b1test.md）で CODE 4 項目すべて **通過**。
+- [ ] git commit 後、`vQ.1` タグが打たれている。
+
+### ハイブリッド QA の役割分担（Q1 時点）
+
+- **CODE 領域**（qa_deterministic.py で決定論的に判定）: C-9.3, C-9.6, C-11.1, C-11.3。
+- **LLM 領域**（Q2 以降で扱う。Q1 時点では Claude が担当）: C-11.2（invariants 適合）, C-11.4（飾り検出）, C-10（可視性）, その他意味理解が要る項目。
+- LLM 領域のローカル化は Phase 0 で不合格。Blocker/Major を見逃すため、Claude に残す。
 
 ### 完了済みマイルストーン
 
@@ -56,10 +62,12 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 - **A1**: canon/status.yaml のシード（tag `vA.1`）。
 - **A2**: writer delta → 整合性QA 数値検査 → editor 適用 の1周（tag `vA.2`）。
 - **A3**: 数値の可視性規律の強制（tag `vA.3`）。
+- **B1**: 決定点の選択肢構造出力と C-11 検査（tag `vB.1`）。
 
 ### 次のマイルストーン（指示があるまで着手しない）
 
-- **B2 以降**: 選択の記録と分岐実行（未着手）。
+- **Q2 以降**: LLM を呼ぶ意味理解系 QA（C-11.2 など）の統合、ハイブリッド QA 化。
+- **B2 以降**: 選択の記録と分岐実行。
 - **M2**: 第1話（ep-01）の本番執筆。director → writer → qa × 2 → editor → commit の一巡を通す。
 
 ## 禁止事項
