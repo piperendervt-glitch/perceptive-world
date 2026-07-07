@@ -39,26 +39,27 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 
 ## CURRENT_MILESTONE
 
-**A2: writer の status_delta 出力 → 整合性QA の数値検査 → editor の適用＆書き戻し、を薄い1話で通す。**
+**A3: 数値は転生者の知覚を通してのみ言及される、という可視性規律を writer と QA に強制する。**
 
-### DONE 条件（A2）
+### DONE 条件（A3）
 
-- [ ] writer 定義に status_delta の出力仕様が明記されている。
-- [ ] consistency_checklist.md に数値検査項目（cause の実在、I-2 の MP 消費強制、[0,max] 範囲、I-1/I-6 尊重、変化量の妥当性）が追加されている。
-- [ ] editor 定義に、delta を [0,max] にクリップして status.yaml に適用する手順と、quick_ref.md 更新が明記されている。
-- [ ] 検証用の薄い1話を1つだけ通し、数値が変化した結果が canon/status.yaml と quick_ref.md に反映されている。
-- [ ] 検証話の整合性QAは違反ゼロ（Blocker/Major なし）。
-- [ ] git commit 後、`vA.2` タグが打たれている。
-- 注: A2 の検証話ではドラマQA は必須にしない（Step A は数値ループ検証が主眼）。本番エピソード（M2 以降）では引き続き両方 PASS が必要。
+- [ ] writer 定義に、数値は転生者の知覚を通してのみ言及する旨のルールが明記されている。現地人視点／地の文では質的表現に留める。
+- [ ] consistency_checklist.md に可視性検査（地の文の数値露出、非転生者視点／台詞の数値露出、帰属の明示）が追加されている。
+- [ ] drama_checklist.md に、情報格差が装置として機能しているかを問う項目が追加されている（形骸化は Warning）。
+- [ ] 検証用の薄い1話を1つだけ通し、現地人1人が登場し、地の文と現地人視点が数値に触れないことを consistency QA が確認する。
+- [ ] 意図的な違反版に対して consistency QA が I-4 違反 (Major) を検出することを、QA レポートに記録している。
+- [ ] git commit 後、`vA.3` タグが打たれている。
+- 注: A3 検証話でもドラマQA は必須にしない（Step A の検証話に共通する例外）。本番エピソード（M2 以降）では引き続き両方 PASS が必要。
 
 ### 完了済みマイルストーン
 
 - **M1**: リポジトリ骨格とコア仕様の作成（tag `v0.1-scaffold`）。
 - **A1**: canon/status.yaml のシード（tag `vA.1`）。
+- **A2**: writer delta → 整合性QA 数値検査 → editor 適用 の1周（tag `vA.2`）。
 
 ### 次のマイルストーン（指示があるまで着手しない）
 
-- **A3 以降**: 未定（数値ループの拡張・可視化・ダイス等）。
+- **Step B**: 選択の挿入。**指示があるまで着手しない**。
 - **M2**: 第1話（ep-01）の本番執筆。director → writer → qa × 2 → editor → commit の一巡を通す。
 
 ## 禁止事項

@@ -11,9 +11,10 @@ last_turn_direction: "-"
 open_questions: []
 unpaid_promises: []
 info_gap: "読者と転生者はステータスが見えるが、現地人は見えない"
-mode_hint: "[A2検証用] 灯火の魔法と被弾を1回ずつ、最小の描写で"
+mode_hint: "[A3検証用] 現地人1人を登場させ、数値の可視性ルールを守れているかを見る"
 # 履歴:
-#   (init) mode_hint: ""
+#   (A2) [A2検証用] 灯火の魔法と被弾を1回ずつ、最小の描写で
+#   (init) ""
 ```
 
 ## 各フィールドの意味
