@@ -39,27 +39,27 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 
 ## CURRENT_MILESTONE
 
-**A3: 数値は転生者の知覚を通してのみ言及される、という可視性規律を writer と QA に強制する。**
+**B1: 決定点で 2〜4 個の選択肢を構造出力する。各選択肢は status.yaml と invariants で実行可能性を検証。分岐はしない。**
 
-### DONE 条件（A3）
+### DONE 条件（B1）
 
-- [ ] writer 定義に、数値は転生者の知覚を通してのみ言及する旨のルールが明記されている。現地人視点／地の文では質的表現に留める。
-- [ ] consistency_checklist.md に可視性検査（地の文の数値露出、非転生者視点／台詞の数値露出、帰属の明示）が追加されている。
-- [ ] drama_checklist.md に、情報格差が装置として機能しているかを問う項目が追加されている（形骸化は Warning）。
-- [ ] 検証用の薄い1話を1つだけ通し、現地人1人が登場し、地の文と現地人視点が数値に触れないことを consistency QA が確認する。
-- [ ] 意図的な違反版に対して consistency QA が I-4 違反 (Major) を検出することを、QA レポートに記録している。
-- [ ] git commit 後、`vA.3` タグが打たれている。
-- 注: A3 検証話でもドラマQA は必須にしない（Step A の検証話に共通する例外）。本番エピソード（M2 以降）では引き続き両方 PASS が必要。
+- [ ] writer 定義に decision ブロック（id / prompt / options / requires / intended_shift）の出力仕様と、選択肢に関する規律が明記されている。
+- [ ] consistency_checklist.md に C-11（選択肢検査）が追加され、requires 充足性・invariants 適合・個数 2〜4・飾り選択検出・可視性適用の各項目を検査できる。
+- [ ] 検証用の薄い1話を1つだけ通し、決定点を 1 個置いて decision ブロックが出力されている（分岐は行わない）。
+- [ ] 意図的な違反版（実行不能な選択肢・飾りの重複選択肢・invariants 違反の選択肢）を投入し、C-11 が Major / Warning / Blocker で検出することを QA レポートに記録している。
+- [ ] git commit 後、`vB.1` タグが打たれている。
+- 注: B1 検証話でもドラマQA は必須にしない（Step A の検証話に準じた例外）。本番エピソード（M2 以降）では引き続き両方 PASS が必要。
 
 ### 完了済みマイルストーン
 
 - **M1**: リポジトリ骨格とコア仕様の作成（tag `v0.1-scaffold`）。
 - **A1**: canon/status.yaml のシード（tag `vA.1`）。
 - **A2**: writer delta → 整合性QA 数値検査 → editor 適用 の1周（tag `vA.2`）。
+- **A3**: 数値の可視性規律の強制（tag `vA.3`）。
 
 ### 次のマイルストーン（指示があるまで着手しない）
 
-- **Step B**: 選択の挿入。**指示があるまで着手しない**。
+- **B2 以降**: 選択の記録と分岐実行（未着手）。
 - **M2**: 第1話（ep-01）の本番執筆。director → writer → qa × 2 → editor → commit の一巡を通す。
 
 ## 禁止事項

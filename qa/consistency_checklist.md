@@ -88,6 +88,28 @@ C-9 が「delta と本文の対応」を検査するのに対し、C-10 は「�
   - 帰属不明・混濁 → **Major**
   - 括弧書き独白、視点表明、明示的「H の目には ○ と映った」等で帰属していれば OK
 
+### C-11. 選択肢検査（decision ブロック）
+
+writer が出力する `decision` ブロック（[[writer]] 参照）に対して以下を検査する。canon/status.yaml と本文の両方を突き合わせる。char が明示されていない場合、行為主体は H と解釈する。
+
+- [ ] **C-11.1 requires の充足性**: 各 option の `requires` が、canon/status.yaml の当該キャラの現在値で満たせるか
+  - `requires.mp: N` に対し `mp.cur < N` → **Major**（実行不能な選択肢の提示は装飾）
+  - `requires.hp: N` に対し `hp.cur < N` → **Major**
+  - `requires.skill: "<名>"` に対し `skills` に含まれない → **Major**
+- [ ] **C-11.2 invariants 適合**: 各 option が [[invariants]] に反していないか
+  - 対価なしに理を破る選択肢（I-1 違反）→ **Blocker**
+  - 無コスト魔法発動を含む選択肢（I-2 違反）→ **Major**
+  - 現地人に数値を晒すことを前提とした選択肢で代償が描かれていない（I-4 違反）→ **Major**
+- [ ] **C-11.3 選択肢の個数**: options の数が 2〜4 の範囲か
+  - 1 個以下 → **Major**（決定点として成立しない）
+  - 5 個以上 → **Warning**（読者が把握できない／粒度過細のサイン）
+- [ ] **C-11.4 飾り選択の検出**: 選択肢同士の `intended_shift` が実質的に異なるか
+  - 2 つ以上の option の intended_shift が同じ価値軸を動かすだけで、互いに区別のつく帰結を持たない → **Warning**（表面の言い換えは飾り）
+  - 全 option が同じ intended_shift → **Major**（決定として成立しない）
+- [ ] **C-11.5 決定点の可視性**: prompt / label / intended_shift が、C-10 と同じ可視性規律に反していないか
+  - prompt や label で現地人が数値を口にしている風の描写 → **Major**（I-4 違反）
+  - intended_shift は内部記録なので現地人視点の縛りは緩いが、canon に反する断定は Warning
+
 ## レポート先
 
 - qa/reports/consistency-<ep-id>.md に判定結果と該当箇所を記録する。
