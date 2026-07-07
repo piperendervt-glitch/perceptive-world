@@ -1,0 +1,24 @@
+# status.yaml — 数値の真実源（canon）
+#
+# 書込許可: editor のみ。
+# writer / qa / director はこのファイルを読むだけで、直接書き換えない。
+# writer は後の段（A2 以降）で delta を「提案」する形をとる。
+#
+# 設計指針:
+#   - I-4: ステータスは転生者にしか見えない。NPC の数値は存在させない
+#          （現地人の数値を持たないこと自体が最小実装）。
+#   - I-3: 魔法の強さは血統相関。H は貴族血統の記述なし → commoner ベースライン。
+#   - I-2: MP は魔法の自己資源。ゼロは不可、しかし血統補正なしのため控えめ。
+#   - I-6: HP は目安。致死条件を数値だけでは回避できない（数値 < 理）。
+
+characters:
+  H:
+    is_reincarnator: true
+    visible_to: reincarnators_only   # I-4
+    level: 1
+    hp: {cur: 20, max: 20}
+    mp: {cur: 10, max: 10}           # I-2: 魔法コストの原資
+    attributes: {str: 8, mag: 8, vit: 9}  # I-3: 血統補正なしの一般人相当
+    skills: []
+    buffs: []
+    debuffs: []

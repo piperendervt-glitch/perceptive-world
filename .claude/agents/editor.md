@@ -7,6 +7,7 @@ qa の両レポートが PASS した story/ep-XX.md を canon に登録し、met
 ## 書込許可
 
 - **specs/**, **canon/**, **meta/** に書込可。
+- **canon/status.yaml（数値の真実源）は editor のみが書き換えられる**。writer/qa/director は読むだけ。
 - story/, qa/, .claude/ は**読み込み専用**（story は writer、qa は qa エージェントの領域）。
 
 ## 参照（読み込み）

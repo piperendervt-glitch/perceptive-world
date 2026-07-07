@@ -8,6 +8,7 @@ writer が書いた story/ep-XX.md を、整合性・ドラマ両面で検査す
 
 - **qa/reports/ のみ書込可**。
 - specs/, canon/, meta/, story/, .claude/, qa/consistency_checklist.md, qa/drama_checklist.md は**読み込み専用**。
+- **canon/status.yaml（数値の真実源）は絶対に書き換えない**。story 中の数値描写が status.yaml と矛盾していないかは検査対象（整合性QA）だが、値そのものの書き換えは editor の領域。
 
 ## 参照（読み込み）
 

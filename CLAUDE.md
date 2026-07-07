@@ -39,21 +39,24 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 
 ## CURRENT_MILESTONE
 
-**M1: リポジトリ骨格とコア仕様の作成。本編は書かない。**
+**A1: 主人公の初期ステータスを canon/status.yaml にシードする。delta もループもまだ作らない。**
 
-### DONE 条件（M1）
+### DONE 条件（A1）
 
-- [ ] 指定ディレクトリ構造が存在する（specs/core, specs/reference, canon/active, canon/archive, meta, qa/reports, .claude/agents, story）。
-- [ ] specs/core/{world, invariants, drama_invariants, characters, conflict_web, central_question}.md が存在し内容がある。
-- [ ] meta/{engine_state, open_loops}.md, qa/{consistency_checklist, drama_checklist}.md が存在する。
-- [ ] .claude/agents/{writer, qa, editor, director}.md に役割と書込許可が明記されている。
-- [ ] invariants と drama_invariants と conflict_web と central_question が互いに矛盾しない。
-- [ ] story/ は空。
-- [ ] 初回コミット後、`v0.1-scaffold` タグが打たれている。
+- [ ] `canon/status.yaml` が存在し、`specs/core/characters.md` と `invariants` (I-2/I-3/I-4/I-6) に矛盾しない。
+- [ ] status.yaml には主人公 H のみ記述。他転生者・NPC の数値は存在しない（I-4 の最小実装）。
+- [ ] `canon/quick_ref.md` に H の現在値の一行要約が追記されている。
+- [ ] editor / writer / qa の各エージェント定義に、status.yaml の書込は editor のみである旨が明記されている。
+- [ ] git commit 後、`vA.1` タグが打たれている。
 
-### 次のマイルストーン（M2、指示があるまで着手しない）
+### 完了済みマイルストーン
 
-- 第1話（ep-01）の執筆。director → writer → qa × 2 → editor → commit の一巡を通す。
+- **M1**: リポジトリ骨格とコア仕様の作成（tag `v0.1-scaffold`）。
+
+### 次のマイルストーン（指示があるまで着手しない）
+
+- **A2 以降**: delta 提案機構、ループへの組み込み。
+- **M2**: 第1話（ep-01）の執筆。director → writer → qa × 2 → editor → commit の一巡を通す。
 
 ## 禁止事項
 
