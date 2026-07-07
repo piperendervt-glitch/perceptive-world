@@ -34,12 +34,34 @@
 ## 出力形式
 
 - story/ep-XX.md として保存する。
-- 末尾に以下のメタ行を付ける（editor と qa がパースする）:
-  ```
+- 末尾に以下のメタブロック（YAML）を付ける。editor と qa がパースする:
+  ```yaml
   ---
   ep_id: ep-XX
   intended_turn: "+ / - / ±"
   touched_ol: [OL-XXX, ...]
   new_ol: [{content: "...", promise_to_reader: bool}, ...]
+  status_delta:
+    - {char: H, change: {"mp.cur": -8}, cause: "洞窟で灯火の魔法を使った"}
+    - {char: H, change: {"hp.cur": -10}, cause: "魔物の爪を受けた"}
   ---
   ```
+
+### status_delta の仕様
+
+- 各 delta は **一つの本文中の事象**に紐づく。要素順は事象発生順。
+- 数値の変化のみを記述する。writer は canon/status.yaml を直接書き換えない（提案のみ）。
+- `char`: canon/status.yaml のキー（現状は `H`）。ここに存在しないキャラを書いてはならない（I-4: NPC は数値を持たない）。
+- `change`: 変化させる項目と量。
+  - 使えるパス: `hp.cur`, `hp.max`, `mp.cur`, `mp.max`, `level`, `attributes.str`, `attributes.mag`, `attributes.vit`
+  - **shorthand**: `hp: -10` は `hp.cur: -10` の略。`mp: -8` は `mp.cur: -8` の略。曖昧を避けたい場合はドット表記を推奨。
+  - skills/buffs/debuffs の追加削除は A2 段階では扱わない（後の段）。
+- `cause`: 本文中の該当事象を短く指す。整合性QA は本文中に対応する描写があるか照合する。
+- 数値変化を伴わない話でも `status_delta: []` を必ず書く（意図的な空である明示）。
+
+### 数値描写のルール（本文側）
+
+- **魔法を発動する描写を書いたら、必ず対応する MP 消費 delta を出す**（[[invariants]] I-2）。これは強制。
+- **戦闘・落下・毒などのダメージ描写を書いたら、対応する HP 消費 delta を出す**。
+- 現地人の前で数値そのものを言葉にしない・見せない（I-4）。心の中の内語や、転生者同士の会話でのみ言及可。
+- 数値の変化量は本文の事象規模に見合わせる。整合性QA は不相応な急変を Warning 判定する。

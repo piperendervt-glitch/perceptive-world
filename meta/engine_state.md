@@ -3,7 +3,7 @@
 書込許可: director のみ（次話の狙い設定時）／ editor（canon 登録後の状態更新）。
 TIER: 1（常時参照）。
 
-## 現在の状態（初期）
+## 現在の状態
 
 ```
 tension: 2
@@ -11,7 +11,9 @@ last_turn_direction: "-"
 open_questions: []
 unpaid_promises: []
 info_gap: "読者と転生者はステータスが見えるが、現地人は見えない"
-mode_hint: ""
+mode_hint: "[A2検証用] 灯火の魔法と被弾を1回ずつ、最小の描写で"
+# 履歴:
+#   (init) mode_hint: ""
 ```
 
 ## 各フィールドの意味

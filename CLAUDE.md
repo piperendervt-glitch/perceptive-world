@@ -39,24 +39,27 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 
 ## CURRENT_MILESTONE
 
-**A1: 主人公の初期ステータスを canon/status.yaml にシードする。delta もループもまだ作らない。**
+**A2: writer の status_delta 出力 → 整合性QA の数値検査 → editor の適用＆書き戻し、を薄い1話で通す。**
 
-### DONE 条件（A1）
+### DONE 条件（A2）
 
-- [ ] `canon/status.yaml` が存在し、`specs/core/characters.md` と `invariants` (I-2/I-3/I-4/I-6) に矛盾しない。
-- [ ] status.yaml には主人公 H のみ記述。他転生者・NPC の数値は存在しない（I-4 の最小実装）。
-- [ ] `canon/quick_ref.md` に H の現在値の一行要約が追記されている。
-- [ ] editor / writer / qa の各エージェント定義に、status.yaml の書込は editor のみである旨が明記されている。
-- [ ] git commit 後、`vA.1` タグが打たれている。
+- [ ] writer 定義に status_delta の出力仕様が明記されている。
+- [ ] consistency_checklist.md に数値検査項目（cause の実在、I-2 の MP 消費強制、[0,max] 範囲、I-1/I-6 尊重、変化量の妥当性）が追加されている。
+- [ ] editor 定義に、delta を [0,max] にクリップして status.yaml に適用する手順と、quick_ref.md 更新が明記されている。
+- [ ] 検証用の薄い1話を1つだけ通し、数値が変化した結果が canon/status.yaml と quick_ref.md に反映されている。
+- [ ] 検証話の整合性QAは違反ゼロ（Blocker/Major なし）。
+- [ ] git commit 後、`vA.2` タグが打たれている。
+- 注: A2 の検証話ではドラマQA は必須にしない（Step A は数値ループ検証が主眼）。本番エピソード（M2 以降）では引き続き両方 PASS が必要。
 
 ### 完了済みマイルストーン
 
 - **M1**: リポジトリ骨格とコア仕様の作成（tag `v0.1-scaffold`）。
+- **A1**: canon/status.yaml のシード（tag `vA.1`）。
 
 ### 次のマイルストーン（指示があるまで着手しない）
 
-- **A2 以降**: delta 提案機構、ループへの組み込み。
-- **M2**: 第1話（ep-01）の執筆。director → writer → qa × 2 → editor → commit の一巡を通す。
+- **A3 以降**: 未定（数値ループの拡張・可視化・ダイス等）。
+- **M2**: 第1話（ep-01）の本番執筆。director → writer → qa × 2 → editor → commit の一巡を通す。
 
 ## 禁止事項
 

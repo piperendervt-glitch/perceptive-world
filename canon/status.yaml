@@ -16,8 +16,8 @@ characters:
     is_reincarnator: true
     visible_to: reincarnators_only   # I-4
     level: 1
-    hp: {cur: 20, max: 20}
-    mp: {cur: 10, max: 10}           # I-2: 魔法コストの原資
+    hp: {cur: 10, max: 20}
+    mp: {cur: 2, max: 10}            # I-2: 魔法コストの原資
     attributes: {str: 8, mag: 8, vit: 9}  # I-3: 血統補正なしの一般人相当
     skills: []
     buffs: []

@@ -11,8 +11,9 @@
 
 ## 主人公 H の現在ステータス（canon/status.yaml より）
 
-- H: Lv1 / HP 20/20 / MP 10/10 / str 8, mag 8, vit 9 / skills: なし / buffs・debuffs: なし
+- H: Lv1 / HP 10/20 / MP 2/10 / str 8, mag 8, vit 9 / skills: なし / buffs・debuffs: なし
 - 可視範囲: 転生者のみ（I-4）。他転生者（K/R/S）と NPC の数値は未定義（存在させない）。
+- 直近の変動: ep-00-a2test（検証話・canon 未登録）で灯火 → mp -8、爪傷 → hp -10。クリップ発生なし。
 
 ## フォーマット（M2 以降で使用）
 
