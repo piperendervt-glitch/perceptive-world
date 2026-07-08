@@ -84,7 +84,25 @@ QUESTIONS: dict[str, dict] = {
         ),
         "severities": "通過 / Warning",
     },
+    "D-clarity": {
+        "title": "明瞭さ（曖昧さの帰属・I-D8/I-D9）",
+        "question": (
+            "この曖昧表現は engine_state の open_loops に登録された謎に直接繋がるか。"
+            "繋がれば 通過。繋がらない曖昧（指示対象不明 / 主観・客観不明 / 字義が壊れた比喩）は"
+            "Warning。超常は meta.has_subjective_marker と invariants 適合も見る。"
+            "**詩的であること自体は減点しない**。"
+        ),
+        "severities": "通過 / Warning",
+    },
 }
+
+# D-clarity の意味判断で Claude Code に渡す照合先（open_loops）。
+OPEN_LOOPS_REF = (
+    "照合先: `meta/open_loops.md`（[[engine_state]] と連動）の登録済みの謎。"
+    "候補が登録謎に直接繋がれば 通過、繋がらない曖昧（指示対象不明・主観/客観不明・"
+    "字義が壊れた比喩）は Warning。playtest 等ローカル運用では当該スライスの "
+    "decision_log に記録した OL-* を照合先にする。"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -114,6 +132,8 @@ def semantic_candidates(meta: dict, episode_text: str) -> dict[str, list[dict]]:
     - C-11.2: flag_ri_interference でフラグされた option だけ
     - C-9.7/C-10: extract_numeric_mentions の各数値言及（該当文±前後1文）
     - C-9.5: extract_cause_pairs の delta ごと（本文一致した最上位候補1つ）
+    - D-clarity: extract_ambiguity_candidates の曖昧さ候補（open_loops 照合は
+      Claude Code セッション内。詩性そのものは減点しない）
     """
     decision = meta.get("decision")
     cands: dict[str, list[dict]] = {k: [] for k in QUESTIONS}
@@ -140,6 +160,9 @@ def semantic_candidates(meta: dict, episode_text: str) -> dict[str, list[dict]]:
             continue
         seen.add(di)
         cands["C-9.5"].append(c)
+
+    for c in qd.extract_ambiguity_candidates(episode_text)["candidates"]:
+        cands["D-clarity"].append(c)
 
     return cands
 
@@ -173,6 +196,8 @@ def render_pending_md(ep_id: str, cands: dict[str, list[dict]]) -> str:
         out.append(f"取り得る判定: {meta_q['severities']}")
         if item == "C-11.2" and pieces:
             out.append(f"理の定義: {RI_DEFINITION}")
+        if item == "D-clarity" and pieces:
+            out.append(OPEN_LOOPS_REF)
         if not pieces:
             out.append("")
             out.append("（候補なし）")

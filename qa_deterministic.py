@@ -574,12 +574,100 @@ def extract_cause_pairs(deltas: list | None, episode: str) -> dict:
     }
 
 
+# D-clarity (I-D8 / I-D9): 曖昧さの候補抽出。判定はしない。
+# コードは「像がぼやけやすい構文」だけを機械的に拾い、Claude Code セッションが
+# open_loops（登録済みの謎）と照合して仕分ける（登録謎に繋がる=通過 / それ以外=Warning）。
+# 過剰抽出は許容する（これは候補であって判定ではない。詩性そのものは減点対象ではない）。
+
+# 指示対象/目的語が落ちると像がぼやけやすい他動詞（「何を」寄せる/向ける…が不明になりやすい）。
+_MISSING_OBJ_VERBS = (
+    "寄せる", "向ける", "差す", "差し出す", "当てる", "かざす",
+    "添える", "重ねる", "近づける", "伸ばす",
+)
+_MISSING_OBJ_RE = re.compile("|".join(_MISSING_OBJ_VERBS))
+
+# 字義が壊れやすい慣用（「〜目/術/すべ/逃げ場/余地 はない」）とメタファ名詞（の底/淵…）。
+_IDIOM_RE = re.compile(r"(?:目|術|すべ|方途|逃げ場|余地)(?:は|も)?ない")
+_METAPHOR_NOUN_RE = re.compile(r"の(?:底|淵|際|芯|奥|懐)")
+
+# 超常・怪異の語彙（bare な「光/灯」は日常語で過剰検出するので入れない）。
+_SUPERNATURAL_RE = re.compile(
+    r"理|刻印|灯火|魔力|呪文|詠唱|気配|ひとりでに|意味になる前|覗|見返|読み返|揺れ"
+)
+# 無生物への擬人化動作（帰属＝主観/客観が曖昧になりやすい）。
+_PERSONIF_RE = re.compile(
+    r"起き上が|立ち上が|目を覚ま|囁|覗|見返|読み返|見ている|見つめ"
+)
+# 主観マーカー（H の知覚・直喩であることを示す＝I-D9 の帰属が読める手掛かり）。
+_SUBJECTIVE_RE = re.compile(
+    r"ように|ような|ようだ|見えた|見える|思えた|思える|気がした|感じた|映った|らしい"
+)
+
+
+def extract_ambiguity_candidates(episode: str) -> dict:
+    """D-clarity: 曖昧さの候補を機械抽出する（判定はしない）。
+
+    3 種の像がぼやけやすい構文を拾う:
+      - missing_referent : 指示対象/目的語が落ちて像がぼやけやすい他動詞構文
+                           （「を」目的語が文中に無い場合のみ候補化）
+      - literal_breaking : 字義が壊れやすい慣用・メタファ名詞
+      - supernatural     : 超常/擬人化描写。meta.has_subjective_marker で主観/客観の
+                           帰属が読めるか（I-D9）の手掛かりを添える
+
+    open_loops 照合（登録謎に繋がる=通過 / それ以外=Warning）は意味理解を要するため
+    Claude Code セッション内で下す。ここでは候補（±前後1文の小片）を返すだけ。
+    出力: {item:"D-clarity", candidates:[{snippet, meta}], needs_llm: True}
+    """
+    sentences = split_sentences(parse_episode_body(episode))
+    candidates: list[dict] = []
+    for i, sent in enumerate(sentences):
+        kinds: list[str] = []
+        matched: list[str] = []
+
+        if _MISSING_OBJ_RE.search(sent) and "を" not in sent:
+            kinds.append("missing_referent")
+            matched += _MISSING_OBJ_RE.findall(sent)
+
+        idiom_hits = _IDIOM_RE.findall(sent) + _METAPHOR_NOUN_RE.findall(sent)
+        if idiom_hits:
+            kinds.append("literal_breaking")
+            matched += idiom_hits
+
+        sup_hits = _SUPERNATURAL_RE.findall(sent) + _PERSONIF_RE.findall(sent)
+        if sup_hits:
+            kinds.append("supernatural")
+            matched += sup_hits
+
+        if not kinds:
+            continue
+        ctx = sentences[max(0, i - 1) : i + 2]
+        candidates.append(
+            {
+                "snippet": " ".join(ctx),
+                "meta": {
+                    "sentence": sent,
+                    "kinds": sorted(set(kinds)),
+                    "matched": sorted(set(matched)),
+                    "has_subjective_marker": bool(_SUBJECTIVE_RE.search(sent)),
+                    "sentence_index": i,
+                    "ask": (
+                        "この曖昧さは open_loops の登録謎に直接繋がるか"
+                        "（繋がる=通過 / 繋がらない=Warning）。"
+                        "超常は主観/客観の帰属が読めるか（I-D9）も見る。"
+                    ),
+                },
+            }
+        )
+    return {"item": "D-clarity", "candidates": candidates, "needs_llm": True}
+
+
 def extract_all(meta: dict, episode_text: str) -> dict:
     """Run every HYBRID extractor and return the structured candidate bundle."""
     return {
         "numeric": extract_numeric_mentions(episode_text),
         "ri_interference": flag_ri_interference(meta.get("decision")),
         "cause_pairs": extract_cause_pairs(meta.get("status_delta"), episode_text),
+        "ambiguity": extract_ambiguity_candidates(episode_text),
     }
 
 
@@ -715,6 +803,26 @@ def regression_hybrid(status_path: str = "canon/status.yaml") -> int:
         "a2test extract_cause_pairs",
         delta_idxs == [0, 1],
         f"delta_indexes covered={delta_idxs} (expected [0, 1])",
+    )
+
+    # 6) D-clarity (CL3): playtest Scene1 の曖昧さが候補に出る（抽出のみ・判定なし）。
+    s1_amb = extract_ambiguity_candidates(read_file("story/playtest-01-s1.md"))
+    s1_sents = [c["meta"]["sentence"] for c in s1_amb["candidates"]]
+    want_s1 = ["見ている", "目はない", "彫りの底"]  # 石がこちらを見ている / 逃げる目 / 彫りの底
+    missing_s1 = [w for w in want_s1 if not any(w in s for s in s1_sents)]
+    check(
+        "playtest-s1 extract_ambiguity_candidates",
+        not missing_s1,
+        f"n={len(s1_sents)} 抽出欠落={missing_s1} (expect 見ている/目はない/彫りの底)",
+    )
+
+    # 7) D-clarity: Scene2 の擬人化「起き上がった」が候補に出る。
+    s2_amb = extract_ambiguity_candidates(read_file("story/playtest-01-s2.md"))
+    s2_hit = any("起き上が" in c["meta"]["sentence"] for c in s2_amb["candidates"])
+    check(
+        "playtest-s2 擬人化(起き上がった)を抽出",
+        s2_hit,
+        f"n={len(s2_amb['candidates'])} 起き上がった候補={s2_hit}",
     )
 
     print()
