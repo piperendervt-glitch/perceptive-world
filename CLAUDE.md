@@ -39,20 +39,17 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 
 ## CURRENT_MILESTONE
 
-**Q4（道A）: qa_run.py を実装。CODE 判定 → 早期FAIL → 通過時のみ意味判断用の小片パックを出力。意味判断は Claude Code セッション内（外部API不使用）。**
+**CL1: drama_invariants.md に I-D8（曖昧さは登録された謎にのみ配分）と I-D9（超常は主観/客観を明示）を追加。**
 
-### DONE 条件（Q4）
+### DONE 条件（CL1）
 
-- [ ] `qa_run.py` が CODE 判定（C-9.3/C-9.6/C-11.1/C-11.3）を先に走らせる。
-- [ ] **早期FAIL**: CODE 段に Blocker/Major があれば、小片パックを生成せずに終了し、writer 差し戻し用レポートを出す。
-- [ ] CODE 通過時のみ、Q2 抽出で意味判断用の小片パックを `qa/reports/pending-llm-<ep>.md` に出力（**LLM は呼ばない**）。
-- [ ] `qa/reports/consistency-<ep>.md` に CODE 判定・早期FAIL の有無・pending 参照・想定/節約 LLM 判断数を明記。
-- [ ] 負のテスト: MP不足(C-11.1) / 範囲外(C-9.3, a2test) / 存在しないchar(C-9.6) が早期FAIL、5択(C-11.3=Warning) は早期FAILしない。早期FAIL 時に小片パックがスキップされる。
-- [ ] B1 正しい版で CODE 全通過し小片パックが生成。違反版の「対価なし理破り(D)」が C-11.2 小片候補に載る（builder 確認）。
-- [ ] **外部APIキー経路（qa_llm.py の --live）は起動しない。qa_llm.py は温存**（削除も改変もしない）。
-- [ ] git commit 後、`vQ.4` タグが打たれている。
+- [ ] I-D8 / I-D9 が drama_invariants.md に、既存 I-D と同じ強制力・書式で追加される。
+- [ ] 既存 I-D1〜I-D7 および整合性 invariants（I-1 理不可侵 等）と矛盾しない。
+- [ ] 詩的密度を残す方針と両立（平明化ではなく曖昧さの**再配分**であることを明記）。
+- [ ] writer 指針（CL2）・QA（CL3）には手を付けない（先回りしない）。
+- [ ] git commit 後、`vCL.1` タグが打たれている。
 
-### ハイブリッド QA の役割分担（Q4 時点・道A）
+### ハイブリッド QA の役割分担（現行・道A）
 
 - **CODE 領域**（決定論的に判定, Q1）: C-9.3, C-9.6, C-11.1, C-11.3。`qa_deterministic.py`。
 - **HYBRID 候補抽出**（コードが小片を抽出, Q2）: C-9.7/C-10, C-11.2, C-9.1/C-9.2/C-9.4/C-12.3。`qa_deterministic.py`。
@@ -74,9 +71,13 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 - **Q1**: qa_deterministic.py に CODE 項目（C-9.3/C-9.6/C-11.1/C-11.3）を実装（tag `vQ.1`）。
 - **Q2**: qa_deterministic.py に HYBRID 候補抽出を実装（抽出のみ・判定なし・LLM 不使用）（tag `vQ.2`）。
 - **Q3**: qa_llm.py + llm_provider.py + config/llm.yaml。小片入力の LLM 判断関数群（API 経路。温存・未使用）（tag `vQ.3`）。
+- **Q4（道A）**: qa_run.py（CODE→早期FAIL→小片パック出力・外部API不使用）（tag `vQ.4`）。
+- **playtest-01**: 通し検証スライス（D1=B, 両シーン PASS・canon 未登録・タグなし）。
 
 ### 次のマイルストーン（指示があるまで着手しない）
 
+- **CL2**: writer 指針への明瞭さ規律の反映。指示があるまで着手しない。
+- **CL3**: QA への I-D8/I-D9 検査の反映。指示があるまで着手しない。
 - **editor のローカル化 / Step C**: 指示があるまで着手しない。
 - **B2 以降**: 選択の記録と分岐実行。
 - **M2**: 第1話（ep-01）の本番執筆。director → writer → qa × 2 → editor → commit の一巡を通す。
