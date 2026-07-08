@@ -39,24 +39,30 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 
 ## CURRENT_MILESTONE
 
-**Q3: LLM 判断項目を、Q2 の抽出小片を入力に、最小プロンプトで Claude に問う関数群を実装。プロバイダ抽象経由・temperature=0・JSON強制・壊れたら1回再要求。**
+**Q4（道A）: qa_run.py を実装。CODE 判定 → 早期FAIL → 通過時のみ意味判断用の小片パックを出力。意味判断は Claude Code セッション内（外部API不使用）。**
 
-### DONE 条件（Q3）
+### DONE 条件（Q4）
 
-- [ ] 各 LLM 項目が小片入力で判定を返す（`qa_llm.py`）: C-11.4（意味的重複）, C-11.2（理干渉）, C-9.7/C-10（話者）, C-12.1/C-12.2（選択反映）, C-9.5（変化量妥当性）。
-- [ ] 入力は**小片のみ**（本文全体・チェックリスト全文は渡さない）。C-11.4 は id+intended_shift だけ、C-11.2 はフラグ済み option の label/shift + 理の定義、C-9.7/C-10 は該当文±前後1文。
-- [ ] temperature=0（llm.yaml の qa ロール）、JSON 強制（output_config.format）、壊れたら 1 回だけ再要求。
-- [ ] モデルは `config/llm.yaml` の qa ロール（軽量 Claude = Haiku 4.5）から読む。プロバイダ抽象（`llm_provider.py`）経由。
-- [ ] B1 違反版で、飾り重複を C-11.4=**Warning**、対価なし理破りを C-11.2=**Blocker** で検出。
-- [ ] 現地人の数値露出 NG 例を C-9.7/C-10=**Major** で検出。B1 正しい版で C-11.4 は誤検出しない。
-- [ ] git commit 後、`vQ.3` タグが打たれている。
+- [ ] `qa_run.py` が CODE 判定（C-9.3/C-9.6/C-11.1/C-11.3）を先に走らせる。
+- [ ] **早期FAIL**: CODE 段に Blocker/Major があれば、小片パックを生成せずに終了し、writer 差し戻し用レポートを出す。
+- [ ] CODE 通過時のみ、Q2 抽出で意味判断用の小片パックを `qa/reports/pending-llm-<ep>.md` に出力（**LLM は呼ばない**）。
+- [ ] `qa/reports/consistency-<ep>.md` に CODE 判定・早期FAIL の有無・pending 参照・想定/節約 LLM 判断数を明記。
+- [ ] 負のテスト: MP不足(C-11.1) / 範囲外(C-9.3, a2test) / 存在しないchar(C-9.6) が早期FAIL、5択(C-11.3=Warning) は早期FAILしない。早期FAIL 時に小片パックがスキップされる。
+- [ ] B1 正しい版で CODE 全通過し小片パックが生成。違反版の「対価なし理破り(D)」が C-11.2 小片候補に載る（builder 確認）。
+- [ ] **外部APIキー経路（qa_llm.py の --live）は起動しない。qa_llm.py は温存**（削除も改変もしない）。
+- [ ] git commit 後、`vQ.4` タグが打たれている。
 
-### ハイブリッド QA の役割分担（Q3 時点）
+### ハイブリッド QA の役割分担（Q4 時点・道A）
 
-- **CODE 領域**（決定論的に判定, Q1）: C-9.3, C-9.6, C-11.1, C-11.3。
+- **CODE 領域**（決定論的に判定, Q1）: C-9.3, C-9.6, C-11.1, C-11.3。`qa_deterministic.py`。
 - **HYBRID 候補抽出**（コードが小片を抽出, Q2）: C-9.7/C-10, C-11.2, C-9.1/C-9.2/C-9.4/C-12.3。`qa_deterministic.py`。
-- **LLM 判断**（抽出小片を最小プロンプトで軽量 Claude に問う, Q3）: C-11.4, C-11.2, C-9.7/C-10, C-12.1/C-12.2, C-9.5。`qa_llm.py` + `llm_provider.py` + `config/llm.yaml`。
-- **統合パイプライン**（Q4 以降）: CODE 判定 + 抽出 + LLM 判定を 1 本のレポートにまとめ、director→writer→qa→editor の一巡に載せる。
+- **統合ランナー**（CODE→早期FAIL→小片パック出力, Q4）: `qa_run.py`。**外部API不使用**。
+- **意味判断**（道A）: 小片パックを **Claude Code セッション内**で読んで下す（C-11.4/C-11.2/C-9.7/C-10/C-9.5）。判定は consistency レポートに統合。
+- **API 経路（温存・未使用）**: `qa_llm.py` + `llm_provider.py` + `config/llm.yaml`。将来 API 方針に切り替える場合、`qa_run.emit_semantic_work()` を `call_llm()` に差し替える（Step3 の境界）。
+
+### QA 運用手順（道A・APIキー不要）
+
+`qa_run.py <ep>` を実行すると、まず CODE（算術・構造）を決定論で判定し、Blocker/Major があれば**早期FAIL**して writer に差し戻す（意味判断は起こさない＝トークン節約）。CODE 通過時のみ意味判断用の小片パック `qa/reports/pending-llm-<ep>.md` が出る。**この小片パックを Claude Code セッションが読み**、各項目（C-11.4 意味的重複 / C-11.2 理干渉 / C-9.7・C-10 話者 / C-9.5 変化量）の重大度を記入欄に判定する（外部API不使用）。判定結果は `qa/reports/consistency-<ep>.md` に統合する（editor 相当の書き込み）。**QA の算術・構造はコード＋早期FAIL、意味判断は Claude Code セッション内で完結する。**
 
 ### 完了済みマイルストーン
 
@@ -67,10 +73,11 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 - **B1**: 決定点の選択肢構造出力と C-11 検査（tag `vB.1`）。
 - **Q1**: qa_deterministic.py に CODE 項目（C-9.3/C-9.6/C-11.1/C-11.3）を実装（tag `vQ.1`）。
 - **Q2**: qa_deterministic.py に HYBRID 候補抽出を実装（抽出のみ・判定なし・LLM 不使用）（tag `vQ.2`）。
+- **Q3**: qa_llm.py + llm_provider.py + config/llm.yaml。小片入力の LLM 判断関数群（API 経路。温存・未使用）（tag `vQ.3`）。
 
 ### 次のマイルストーン（指示があるまで着手しない）
 
-- **Q4 以降**: CODE 判定 + 抽出 + LLM 判定を統合したハイブリッド QA パイプライン化。
+- **editor のローカル化 / Step C**: 指示があるまで着手しない。
 - **B2 以降**: 選択の記録と分岐実行。
 - **M2**: 第1話（ep-01）の本番執筆。director → writer → qa × 2 → editor → commit の一巡を通す。
 
