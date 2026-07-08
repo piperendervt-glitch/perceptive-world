@@ -39,19 +39,18 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 
 ## CURRENT_MILESTONE
 
-**D3（出目モード＋代償描写＋構造化ログ）: 出目表示モード(reveal_dice, デフォルトON)を実装。writer が tier を物語として描写(success_with_cost=I-D5 の代償を織る)。判定を構造化ログに記録。**
+**D4（既知シーンで回帰＋通し確認）: playtest-01 の D1(選択B)に判定を差し込み、選ぶ→2D6+修正→3段階→writer描写→play_log記録 を通しで回す。出目表示 ON で確認、OFF でも一巡。**
 
-### DONE 条件（D3・出目モード＋代償描写＋構造化ログ）
+### DONE 条件（D4・通し検証）
 
-- [x] 出目モードで表示/非表示が切替でき（既定=表示）、writer が tier に応じた描写（特に success_with_cost で代償）を書き、判定が構造化ログに残る。
-- [x] `config/play.yaml` の `reveal_dice`（既定 true）。true=dice/total/target/tier を提示、false=tier の帰結だけ提示し出目は内部ログのみ。
-- [x] `present_result(result, reveal_dice=)` で提示が切り替わる。writer の散文は reveal_dice に依存しない。
-- [x] writer.md に tier→帰結の描き方（full_success/success_with_cost=I-D5/failure/critical/fumble）。明瞭さ規律 I-D8/I-D9 準拠。
-- [x] `meta/play_log.yaml` に構造化ログ（decision_log の拡張）: turn/decision_id/chosen/action_type/dice/total/target/tier/modifier/cost_applied/consequence/status_delta/scene_ref/seed。**出目非表示でもログには出目を残す**。
-- [x] D1 の器 `make_log_entry` を実運用に接続（resolve を verbatim 内包）。動画機能そのものは作らない（素材化まで）。
-- [x] 回帰: reveal 両モードで提示が変わりログは両方完全、success_with_cost で代償描写＋`cost_applied`(mp/id5_fired) 記録。
-- [x] 回帰（D4）は先回りしない。本編は書かない。
-- [x] git commit 後、`vD.3` タグが打たれている。
+- [x] playtest-01 の B に判定が入り（magic/mag mod0・target7・呪文コスト1MP）、tier に応じた Scene2 が生成され、play_log に構造化記録が残る。
+- [x] 5 tier（critical/full_success/success_with_cost/failure/fumble）の Scene2 を書き分け＝**writer は必ず成功を書けない**（数値が結果を左右）。canonical（seed3）は success_with_cost で「得た＝露見」がダイス由来で自然発火。
+- [x] H の低 mag（modifier 0）が clean success を出目上振れ頼みにする＝I-3 が判定分布に不利として効く。
+- [x] `reveal_dice` **ON で一巡**（出目表示）、**OFF でも一巡**（隠しモード・帰結のみ提示）。**OFF でも play_log には出目を残す**。
+- [x] 全 tier を `qa_run.py`（CODE）＋セッション内意味判断（道A）に通し、整合性・ドラマ・明瞭さ(D-clarity) で **PASS**（Blocker0/Major0/Warning0）。統合: `qa/reports/consistency-playtest-01-d4.md`。
+- [x] 検証専用: canon/active 未登録・canon/status.yaml 未書換・meta/engine_state.md 未書換。本編は量産しない。
+- [x] Step C（自由記述）・メディア化（動画生成）等は先回りしない。
+- [x] git commit 後、`vD.4` タグが打たれている。
 
 ### 判定エンジン（resolve.py・D1）
 
@@ -77,6 +76,14 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 - **構造化ログ（動画化の素材）**: `meta/play_log.yaml`（decision_log の拡張, editor 書込, TIER3）。`make_play_log_entry()` が `{turn, decision_id, chosen, char, action_type, dice, roll_total, modifier, total, target, tier, cost_applied{mp,id5_fired}, consequence, status_delta, scene_ref, reveal_dice, seed, resolve}` を吐く。`append_play_log()` で追記（ヘッダ保存・エイリアス無効）。**動画機能そのものは作らない**（素材化まで）。
 - **make_log_entry を実運用に接続**: `make_play_log_entry` は D1 の器 `make_log_entry` を通して resolve を verbatim 内包（seed 込み＝動画再生成が可能）。
 - **cost_applied**: `mp`=I-2 の機構コスト（status_delta の mp.cur 消費量）、`id5_fired`=I-D5 発火（`tier==success_with_cost`）。弾かれた判定（attempted=false）もログに残す（dice/resolve は null, cost.mp=0）。
+
+### 通し検証（playtest-01-d4・D4）
+
+- **差し込み**: playtest-01 の決定点 D1=B「灯火で刻印を読む」を判定として解決 —— `magic`/`mag`（modifier=0）・Adjudicator `target=7`・呪文コスト `1MP`。D1 の resolve は無改変、status_resolve が供給。
+- **tier が Scene2 を左右**: 5 tier（critical/full_success/success_with_cost/failure/fumble）の Scene2 を書き分け（`story/playtest-01-s2-d4-<tier>.md`）＝**writer は必ず成功を書けない**。canonical=seed3→success_with_cost で「得た＝露見」がダイス由来で自然発火。低 mag（mod0）が clean success を出目上振れ頼みにする（I-3 が判定分布に現れる）。
+- **reveal ON/OFF 一巡**: 両モードで通し、**OFF でも play_log に出目を保持**。writer 散文は reveal に非依存。記録は `meta/play_log.yaml`（canonical ON/OFF ＋ 別 tier 分岐実例 turn `1-alt`）。
+- **QA**: 5 tier すべて `qa_run.py`（CODE）＋道A 意味判断で PASS（Blocker0/Major0/Warning0）。統合 `qa/reports/consistency-playtest-01-d4.md`。通し文書 `story/playtest-01-d4.md`。
+- **スコープ**: 検証専用。canon/active・canon/status.yaml・meta/engine_state.md いずれも未書換。本編は量産しない。
 
 ### ハイブリッド QA の役割分担（現行・道A）
 
@@ -111,10 +118,10 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 - **D1（判定エンジン）**: resolve.py に 2D6＋修正→3段階（＋ゾロ目 critical/fumble）の判定エンジン。乱数はコード独占・seed 再現可能（tag `vD.1`）。
 - **D2（ステータス連動）**: status_resolve.py に 行動種別→使用能力の対応、`modifier_from_status`（attr-PIVOT）、魔法判定の MP 消費（I-2）と MP 不足の弾き（C-11.1 整合）。D1 は無改変で供給側を追加。Hの低い mag が魔法判定の不利として効く（I-3）（tag `vD.2`）。
 - **D3（出目モード＋代償描写＋構造化ログ）**: play_log.py に 出目表示モード（`config/play.yaml` reveal_dice, 既定 true）、`present_result`、tier 帰結の writer 指針（writer.md, success_with_cost=I-D5）、構造化ログ `meta/play_log.yaml`（`make_play_log_entry`/`append_play_log`, make_log_entry を実運用接続）。動画機能は未実装（素材化まで）（tag `vD.3`）。
+- **D4（既知シーンで通し検証）**: playtest-01 の D1=B に判定を差し込み、5 tier の Scene2 書き分け（`story/playtest-01-s2-d4-*`）＋ reveal ON/OFF 一巡＋ play_log 記録＋ 全 tier QA PASS（`consistency-playtest-01-d4.md`）。canonical=success_with_cost。検証専用・canon 未書換。**普通の TRPG として遊べる土台が完成**（tag `vD.4`）。
 
 ### 次のマイルストーン（指示があるまで着手しない）
 
-- **D4**: 判定エンジンの回帰・通し検証（指示があるまで着手しない）。
 - **Step C（editor のローカル化 等）**: 指示があるまで着手しない。
 - **B2 以降**: 選択の記録と分岐実行。
 - **M2**: 第1話（ep-01）の本番執筆。director → writer → qa × 2 → editor → commit の一巡を通す。

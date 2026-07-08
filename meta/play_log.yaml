@@ -10,12 +10,15 @@
 # 出目(dice)は reveal_dice に関わらず必ず残す（内部真実の保持）。seed で再現可能。
 # 生成の器: play_log.py（make_play_log_entry / append_play_log）。
 #
-# 下は D3 の実例（playtest-01 Scene2「灯火で刻印を読む」を engine 既定コストで
-# 再導出したデモ。canon/status.yaml は書き換えていない）。
+# 中身は D4 通し検証（playtest-01 D1=B「灯火で刻印を読む」/ magic判定 mag mod0 /
+# Adjudicator target=7 / 呪文コスト 1MP）。canon/status.yaml は書き換えていない。
+#   turn 1 : canonical playthrough（実際の出目 seed=3 → success_with_cost）を
+#            reveal ON と OFF で各一巡（OFF でも dice はログに残る）。
+#   turn 1-alt : 別 tier の分岐実例（同じ判定が別の出目だった場合。seed で再現可能）。
 
 - turn: 1
   decision_id: D1
-  chosen: B（灯火で刻印を読む）
+  chosen: B（残る魔力で灯火を極小に灯し、彫りの底を読む）
   char: H
   action_type: magic
   attempted: true
@@ -29,16 +32,15 @@
   target: 7
   tier: success_with_cost
   cost_applied:
-    mp: 2
+    mp: 1
     id5_fired: true
-  consequence: 刻印は読めた——最後の一画で光が引き、読み返される感触だけが残る。女に指先の灯を見られ、玩具の石と笑った顔が消える。得た（断片）＝失った（露見せぬ
-    H 像）。
+  consequence: 一語「見て」だけ読めたが、女に指先の光を見られ露見（得た＝失った, I-D5）。canonical。
   status_delta:
   - char: H
     change:
-      mp.cur: -2
+      mp.cur: -1
     cause: 魔法発動 (I-2, magic)
-  scene_ref: story/playtest-01-s2-rev.md#scene2
+  scene_ref: story/playtest-01-s2-d4-success_with_cost.md
   reveal_dice: true
   seed: 3
   resolve:
@@ -52,3 +54,193 @@
     tier: success_with_cost
     margin: 0
     seed: 3
+- turn: 1
+  decision_id: D1
+  chosen: B（残る魔力で灯火を極小に灯し、彫りの底を読む）
+  char: H
+  action_type: magic
+  attempted: true
+  blocked: null
+  dice:
+  - 2
+  - 5
+  roll_total: 7
+  modifier: 0
+  total: 7
+  target: 7
+  tier: success_with_cost
+  cost_applied:
+    mp: 1
+    id5_fired: true
+  consequence: 同一判定を隠しモードで一巡。playerには帰結（叶うが代償）のみ提示、出目はログに保持。
+  status_delta:
+  - char: H
+    change:
+      mp.cur: -1
+    cause: 魔法発動 (I-2, magic)
+  scene_ref: story/playtest-01-s2-d4-success_with_cost.md
+  reveal_dice: false
+  seed: 3
+  resolve:
+    dice:
+    - 2
+    - 5
+    roll_total: 7
+    modifier: 0
+    total: 7
+    target: 7
+    tier: success_with_cost
+    margin: 0
+    seed: 3
+- turn: 1-alt
+  decision_id: D1
+  chosen: B（残る魔力で灯火を極小に灯し、彫りの底を読む）
+  char: H
+  action_type: magic
+  attempted: true
+  blocked: null
+  dice:
+  - 6
+  - 4
+  roll_total: 10
+  modifier: 0
+  total: 10
+  target: 7
+  tier: full_success
+  cost_applied:
+    mp: 1
+    id5_fired: false
+  consequence: 「見て、誰が」まで読み切り、露見なし（外的代償なし）。謎は深化・知の重荷は残る（内的 I-D5）。
+  status_delta:
+  - char: H
+    change:
+      mp.cur: -1
+    cause: 魔法発動 (I-2, magic)
+  scene_ref: story/playtest-01-s2-d4-full_success.md
+  reveal_dice: true
+  seed: 24
+  resolve:
+    dice:
+    - 6
+    - 4
+    roll_total: 10
+    modifier: 0
+    total: 10
+    target: 7
+    tier: full_success
+    margin: 3
+    seed: 24
+- turn: 1-alt
+  decision_id: D1
+  chosen: B（残る魔力で灯火を極小に灯し、彫りの底を読む）
+  char: H
+  action_type: magic
+  attempted: true
+  blocked: null
+  dice:
+  - 2
+  - 3
+  roll_total: 5
+  modifier: 0
+  total: 5
+  target: 7
+  tier: failure
+  cost_applied:
+    mp: 1
+    id5_fired: false
+  consequence: 何も読めず、しかも露見だけした。手がかりゼロで最悪の引き（Director 燃料）。
+  status_delta:
+  - char: H
+    change:
+      mp.cur: -1
+    cause: 魔法発動 (I-2, magic)
+  scene_ref: story/playtest-01-s2-d4-failure.md
+  reveal_dice: true
+  seed: 4
+  resolve:
+    dice:
+    - 2
+    - 3
+    roll_total: 5
+    modifier: 0
+    total: 5
+    target: 7
+    tier: failure
+    margin: -2
+    seed: 4
+- turn: 1-alt
+  decision_id: D1
+  chosen: B（残る魔力で灯火を極小に灯し、彫りの底を読む）
+  char: H
+  action_type: magic
+  attempted: true
+  blocked: null
+  dice:
+  - 6
+  - 6
+  roll_total: 12
+  modifier: 0
+  total: 12
+  target: 7
+  tier: critical
+  cost_applied:
+    mp: 1
+    id5_fired: false
+  consequence: ゾロ目6-6。三画読み切り＋石が応じる新スレッド、露見なし。理の扉は閉じたまま（I-1保持）。
+  status_delta:
+  - char: H
+    change:
+      mp.cur: -1
+    cause: 魔法発動 (I-2, magic)
+  scene_ref: story/playtest-01-s2-d4-critical.md
+  reveal_dice: true
+  seed: 20
+  resolve:
+    dice:
+    - 6
+    - 6
+    roll_total: 12
+    modifier: 0
+    total: 12
+    target: 7
+    tier: critical
+    margin: 5
+    seed: 20
+- turn: 1-alt
+  decision_id: D1
+  chosen: B（残る魔力で灯火を極小に灯し、彫りの底を読む）
+  char: H
+  action_type: magic
+  attempted: true
+  blocked: null
+  dice:
+  - 1
+  - 1
+  roll_total: 2
+  modifier: 0
+  total: 2
+  target: 7
+  tier: fumble
+  cost_applied:
+    mp: 1
+    id5_fired: false
+  consequence: ゾロ目1-1。灯が暴れ派手に露見、女が怖れて後退＝関係崩壊（Director 大燃料）。
+  status_delta:
+  - char: H
+    change:
+      mp.cur: -1
+    cause: 魔法発動 (I-2, magic)
+  scene_ref: story/playtest-01-s2-d4-fumble.md
+  reveal_dice: true
+  seed: 2
+  resolve:
+    dice:
+    - 1
+    - 1
+    roll_total: 2
+    modifier: 0
+    total: 2
+    target: 7
+    tier: fumble
+    margin: -5
+    seed: 2
