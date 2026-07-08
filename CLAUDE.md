@@ -39,17 +39,17 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 
 ## CURRENT_MILESTONE
 
-**CL3: drama_checklist.md に D-clarity を追加し、qa_deterministic.py に曖昧さ候補の抽出（コード側）を実装。判定はしない（open_loops 照合はセッション内）。**
+**CL4: playtest-01 を D-clarity で回帰し、正解セット(5フラグ/2通過)と一致するか検証。一致後、Scene1/2 を詩性を保ったまま規律に沿って書き直す。**
 
-### DONE 条件（CL3）
+### DONE 条件（CL4）
 
-- [ ] `qa/drama_checklist.md` に D-clarity（明瞭さ・曖昧さの帰属）が定義される。詩性そのものは減点しない。open_loops に繋がる曖昧=通過 / 繋がらない曖昧=Warning。
-- [ ] `qa_deterministic.py` に `extract_ambiguity_candidates(episode)` を実装。**抽出のみ・判定しない**。出力は `{item:"D-clarity", candidates:[{snippet, meta}], needs_llm:true}`。
-- [ ] 3 種の候補（missing_referent / literal_breaking / supernatural）を機械抽出し、超常は `has_subjective_marker` で主観/客観の手掛かりを添える。
-- [ ] `qa_run.py` の小片パックに D-clarity を含め、open_loops 照合先を明記する。
-- [ ] 回帰: playtest-01 Scene1 を通し「石がこちらを見ている」「逃げる目」「彫りの底」が候補に出る。Scene2 の擬人化「起き上がった」も出る。
-- [ ] 回帰と本文の書き直し（CL4）には手を付けない（先回りしない）。
-- [ ] git commit 後、`vCL.3` タグが打たれている。
+- [ ] D-clarity が正解セットの 5 つを Warning・2 つを通過と判定し、書き直し版が骨を明快にしつつ詩的密度と謎(6,7)を保持する。
+- [ ] playtest-01 Scene1/2 を qa_run.py に通し、D-clarity 小片パックを生成→ open_loops 照合で仕分け（正解1〜5=Warning / 6,7=通過）。
+- [ ] 不一致は「抽出漏れ / 仕分け誤り」で分類して報告（#5 は欠落型でコード未抽出＝抽出漏れ、判定は一致）。
+- [ ] 書き直し版 `story/playtest-01-s{1,2}-rev.md` を作り、1〜5 を一義化（詩性保持）、6,7 は無改変で保護。「起き上がった」は主観と明示（客観だと理破り Blocker）。
+- [ ] 書き直し版を QA 再通過（CODE 通過・D-clarity 骨の不明瞭ゼロ）。`story/playtest-01.md` に元と対比で併記。
+- [ ] 検証専用。canon/active 未登録。次 Step(C/D) には手を付けない（先回りしない）。
+- [ ] git commit 後、`vCL.4` タグが打たれている。
 
 ### ハイブリッド QA の役割分担（現行・道A）
 
@@ -79,11 +79,12 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 - **playtest-01**: 通し検証スライス（D1=B, 両シーン PASS・canon 未登録・タグなし）。
 - **CL1**: drama_invariants.md に I-D8 / I-D9（明瞭さの規律）を追加（tag `vCL.1`）。
 - **CL2**: writer.md に I-D8/I-D9 に沿う執筆指針（明瞭さの規律）を追加（tag `vCL.2`）。
+- **CL3**: drama_checklist.md に D-clarity、qa_deterministic.py に `extract_ambiguity_candidates`（抽出のみ・判定なし）（tag `vCL.3`）。
+- **CL4**: playtest-01 を D-clarity で回帰（正解 7/7 一致）し、Scene1/2 を詩性保持で書き直し（`*-rev.md`）（tag `vCL.4`）。
 
 ### 次のマイルストーン（指示があるまで着手しない）
 
-- **CL4**: D-clarity の回帰と、playtest 本文の書き直し（曖昧さの再配分）。指示があるまで着手しない。
-- **editor のローカル化 / Step C**: 指示があるまで着手しない。
+- **Step C/D（editor のローカル化 等）**: 指示があるまで着手しない。
 - **B2 以降**: 選択の記録と分岐実行。
 - **M2**: 第1話（ep-01）の本番執筆。director → writer → qa × 2 → editor → commit の一巡を通す。
 

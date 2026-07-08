@@ -1,10 +1,10 @@
-# pending-llm-playtest-01-s1 — 意味判断の小片パック
+# pending-llm-playtest-01-s1-rev — 意味判断の小片パック
 
 > qa_run.py が CODE 段通過後に生成。**外部 API は使わない。**
 > Claude Code セッションが各小片を読み、重大度を記入する。
-> 記入後、判定を qa/reports/consistency-playtest-01-s1.md に統合する（editor 相当）。
+> 記入後、判定を qa/reports/consistency-playtest-01-s1-rev.md に統合する（editor 相当）。
 
-想定 LLM 判断数: **10**
+想定 LLM 判断数: **9**
 
 ## C-11.4 — 意味的重複（飾り選択）（候補 1）
 問い: 各 option の intended_shift だけを見て、2つ以上が同じ価値軸を動かすだけで互いに区別のつく帰結を持たないか。全 option 同一なら Major、一部が飾りならWarning、区別できれば 通過。
@@ -40,17 +40,17 @@ meta: {'option_id': 'A', 'requires_empty': True, 'ri_in_label': False, 'ri_in_in
 ### 候補 1
 snippet:
 ```
-H は口を開きかけて、閉じた。 （残り MP 2。灯火を一度灯せば、彫りの底まで確かめられる。だが灯せば、女はこの手のひらの上に、知らないはずの光を見る） （HP 10/20。走って逃げる目はない。ここで拾った糸は、たぶん二度と拾えない）
+H は口を開きかけて、閉じた。 （残り MP 2。灯火を一度灯せば、彫りの一番深い線まで、この目で追いきれる。だが灯せば、女はこの手のひらの上に、知らないはずの光を見る） （HP 10/20。走って逃げる力は、もう残っていない。ここで拾った糸は、たぶん二度と拾えない）
 ```
-meta: {'sentence': '（残り MP 2。灯火を一度灯せば、彫りの底まで確かめられる。だが灯せば、女はこの手のひらの上に、知らないはずの光を見る）', 'categories': ['mp', 'number'], 'matched': ['MP', '2'], 'attribution_hint': 'monologue', 'sentence_index': 15}
+meta: {'sentence': '（残り MP 2。灯火を一度灯せば、彫りの一番深い線まで、この目で追いきれる。だが灯せば、女はこの手のひらの上に、知らないはずの光を見る）', 'categories': ['mp', 'number'], 'matched': ['MP', '2'], 'attribution_hint': 'monologue', 'sentence_index': 15}
 判定: ____（記入）    理由: ____（記入）
 
 ### 候補 2
 snippet:
 ```
-（残り MP 2。灯火を一度灯せば、彫りの底まで確かめられる。だが灯せば、女はこの手のひらの上に、知らないはずの光を見る） （HP 10/20。走って逃げる目はない。ここで拾った糸は、たぶん二度と拾えない） 女は湯を取りに立ち、背を向けた。
+（残り MP 2。灯火を一度灯せば、彫りの一番深い線まで、この目で追いきれる。だが灯せば、女はこの手のひらの上に、知らないはずの光を見る） （HP 10/20。走って逃げる力は、もう残っていない。ここで拾った糸は、たぶん二度と拾えない） 女は湯を取りに立ち、背を向けた。
 ```
-meta: {'sentence': '（HP 10/20。走って逃げる目はない。ここで拾った糸は、たぶん二度と拾えない）', 'categories': ['hp', 'number'], 'matched': ['HP', '10/20'], 'attribution_hint': 'monologue', 'sentence_index': 16}
+meta: {'sentence': '（HP 10/20。走って逃げる力は、もう残っていない。ここで拾った糸は、たぶん二度と拾えない）', 'categories': ['hp', 'number'], 'matched': ['HP', '10/20'], 'attribution_hint': 'monologue', 'sentence_index': 16}
 判定: ____（記入）    理由: ____（記入）
 
 ## C-9.5 — 変化量の妥当性（候補 0）
@@ -59,7 +59,7 @@ meta: {'sentence': '（HP 10/20。走って逃げる目はない。ここで拾�
 
 （候補なし）
 
-## D-clarity — 明瞭さ（曖昧さの帰属・I-D8/I-D9）（候補 6）
+## D-clarity — 明瞭さ（曖昧さの帰属・I-D8/I-D9）（候補 5）
 問い: この曖昧表現は engine_state の open_loops に登録された謎に直接繋がるか。繋がれば 通過。繋がらない曖昧（指示対象不明 / 主観・客観不明 / 字義が壊れた比喩）はWarning。超常は meta.has_subjective_marker と invariants 適合も見る。**詩的であること自体は減点しない**。
 取り得る判定: 通過 / Warning
 照合先: `meta/open_loops.md`（[[engine_state]] と連動）の登録済みの謎。候補が登録謎に直接繋がれば 通過、繋がらない曖昧（指示対象不明・主観/客観不明・字義が壊れた比喩）は Warning。playtest 等ローカル運用では当該スライスの decision_log に記録した OL-* を照合先にする。
@@ -99,15 +99,7 @@ meta: {'sentence': '（この石、こちらを見ている）', 'kinds': ['supe
 ### 候補 5
 snippet:
 ```
-H は口を開きかけて、閉じた。 （残り MP 2。灯火を一度灯せば、彫りの底まで確かめられる。だが灯せば、女はこの手のひらの上に、知らないはずの光を見る） （HP 10/20。走って逃げる目はない。ここで拾った糸は、たぶん二度と拾えない）
+H は口を開きかけて、閉じた。 （残り MP 2。灯火を一度灯せば、彫りの一番深い線まで、この目で追いきれる。だが灯せば、女はこの手のひらの上に、知らないはずの光を見る） （HP 10/20。走って逃げる力は、もう残っていない。ここで拾った糸は、たぶん二度と拾えない）
 ```
-meta: {'sentence': '（残り MP 2。灯火を一度灯せば、彫りの底まで確かめられる。だが灯せば、女はこの手のひらの上に、知らないはずの光を見る）', 'kinds': ['literal_breaking', 'supernatural'], 'matched': ['の底', '灯火'], 'has_subjective_marker': False, 'sentence_index': 15, 'ask': 'この曖昧さは open_loops の登録謎に直接繋がるか（繋がる=通過 / 繋がらない=Warning）。超常は主観/客観の帰属が読めるか（I-D9）も見る。'}
-判定: ____（記入）    理由: ____（記入）
-
-### 候補 6
-snippet:
-```
-（残り MP 2。灯火を一度灯せば、彫りの底まで確かめられる。だが灯せば、女はこの手のひらの上に、知らないはずの光を見る） （HP 10/20。走って逃げる目はない。ここで拾った糸は、たぶん二度と拾えない） 女は湯を取りに立ち、背を向けた。
-```
-meta: {'sentence': '（HP 10/20。走って逃げる目はない。ここで拾った糸は、たぶん二度と拾えない）', 'kinds': ['literal_breaking'], 'matched': ['目はない'], 'has_subjective_marker': False, 'sentence_index': 16, 'ask': 'この曖昧さは open_loops の登録謎に直接繋がるか（繋がる=通過 / 繋がらない=Warning）。超常は主観/客観の帰属が読めるか（I-D9）も見る。'}
+meta: {'sentence': '（残り MP 2。灯火を一度灯せば、彫りの一番深い線まで、この目で追いきれる。だが灯せば、女はこの手のひらの上に、知らないはずの光を見る）', 'kinds': ['supernatural'], 'matched': ['灯火'], 'has_subjective_marker': False, 'sentence_index': 15, 'ask': 'この曖昧さは open_loops の登録謎に直接繋がるか（繋がる=通過 / 繋がらない=Warning）。超常は主観/客観の帰属が読めるか（I-D9）も見る。'}
 判定: ____（記入）    理由: ____（記入）

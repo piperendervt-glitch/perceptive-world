@@ -1,8 +1,8 @@
-# pending-llm-playtest-01-s2 — 意味判断の小片パック
+# pending-llm-playtest-01-s2-rev — 意味判断の小片パック
 
 > qa_run.py が CODE 段通過後に生成。**外部 API は使わない。**
 > Claude Code セッションが各小片を読み、重大度を記入する。
-> 記入後、判定を qa/reports/consistency-playtest-01-s2.md に統合する（editor 相当）。
+> 記入後、判定を qa/reports/consistency-playtest-01-s2-rev.md に統合する（editor 相当）。
 
 想定 LLM 判断数: **8**
 
@@ -27,7 +27,7 @@ snippet:
 ```
 まるで、読む側を読み返しているように。 （残り MP 1。あと一度きり） （答えじゃない。問いのほうが、こちらを覗いている）
 ```
-meta: {'sentence': '（残り MP 1。あと一度きり）', 'categories': ['mp', 'number'], 'matched': ['MP', '1'], 'attribution_hint': 'monologue', 'sentence_index': 11}
+meta: {'sentence': '（残り MP 1。あと一度きり）', 'categories': ['mp', 'number'], 'matched': ['MP', '1'], 'attribution_hint': 'monologue', 'sentence_index': 12}
 判定: ____（記入）    理由: ____（記入）
 
 ## C-9.5 — 変化量の妥当性（候補 1）
@@ -50,9 +50,9 @@ meta: {'delta_index': 0, 'char': 'H', 'cause': '灯火を灯して石の刻印�
 ### 候補 1
 snippet:
 ```
-女の背中が湯気の向こうにある間に、H は指を丸めた。 詠唱は声にしない。 息だけで、いちばん小さな灯火を。
+その背中が湯気の向こうにある間に、H は指を丸めた。 詠唱は声にしない。 息だけで、いちばん小さな灯火を。
 ```
-meta: {'sentence': '詠唱は声にしない。', 'kinds': ['supernatural'], 'matched': ['詠唱'], 'has_subjective_marker': False, 'sentence_index': 1, 'ask': 'この曖昧さは open_loops の登録謎に直接繋がるか（繋がる=通過 / 繋がらない=Warning）。超常は主観/客観の帰属が読めるか（I-D9）も見る。'}
+meta: {'sentence': '詠唱は声にしない。', 'kinds': ['supernatural'], 'matched': ['詠唱'], 'has_subjective_marker': False, 'sentence_index': 2, 'ask': 'この曖昧さは open_loops の登録謎に直接繋がるか（繋がる=通過 / 繋がらない=Warning）。超常は主観/客観の帰属が読めるか（I-D9）も見る。'}
 判定: ____（記入）    理由: ____（記入）
 
 ### 候補 2
@@ -60,23 +60,23 @@ snippet:
 ```
 詠唱は声にしない。 息だけで、いちばん小さな灯火を。 指先に、青白い点がともる。
 ```
-meta: {'sentence': '息だけで、いちばん小さな灯火を。', 'kinds': ['supernatural'], 'matched': ['灯火'], 'has_subjective_marker': False, 'sentence_index': 2, 'ask': 'この曖昧さは open_loops の登録謎に直接繋がるか（繋がる=通過 / 繋がらない=Warning）。超常は主観/客観の帰属が読めるか（I-D9）も見る。'}
+meta: {'sentence': '息だけで、いちばん小さな灯火を。', 'kinds': ['supernatural'], 'matched': ['灯火'], 'has_subjective_marker': False, 'sentence_index': 3, 'ask': 'この曖昧さは open_loops の登録謎に直接繋がるか（繋がる=通過 / 繋がらない=Warning）。超常は主観/客観の帰属が読めるか（I-D9）も見る。'}
 判定: ____（記入）    理由: ____（記入）
 
 ### 候補 3
 snippet:
 ```
-指先に、青白い点がともる。 石の刻印に寄せる。 彫りの底が、光を受けて起き上がった。
+指先に、青白い点がともる。 その点を、石の刻印に寄せる。 彫りの一番深い線が、光を受けて起き上がった——ように、H の目には映った。
 ```
-meta: {'sentence': '石の刻印に寄せる。', 'kinds': ['missing_referent', 'supernatural'], 'matched': ['刻印', '寄せる'], 'has_subjective_marker': False, 'sentence_index': 4, 'ask': 'この曖昧さは open_loops の登録謎に直接繋がるか（繋がる=通過 / 繋がらない=Warning）。超常は主観/客観の帰属が読めるか（I-D9）も見る。'}
+meta: {'sentence': 'その点を、石の刻印に寄せる。', 'kinds': ['supernatural'], 'matched': ['刻印'], 'has_subjective_marker': False, 'sentence_index': 5, 'ask': 'この曖昧さは open_loops の登録謎に直接繋がるか（繋がる=通過 / 繋がらない=Warning）。超常は主観/客観の帰属が読めるか（I-D9）も見る。'}
 判定: ____（記入）    理由: ____（記入）
 
 ### 候補 4
 snippet:
 ```
-石の刻印に寄せる。 彫りの底が、光を受けて起き上がった。 線が意味へ寄る——「見て」。
+その点を、石の刻印に寄せる。 彫りの一番深い線が、光を受けて起き上がった——ように、H の目には映った。 線が意味へ寄る——「見て」。
 ```
-meta: {'sentence': '彫りの底が、光を受けて起き上がった。', 'kinds': ['literal_breaking', 'supernatural'], 'matched': ['の底', '起き上が'], 'has_subjective_marker': False, 'sentence_index': 5, 'ask': 'この曖昧さは open_loops の登録謎に直接繋がるか（繋がる=通過 / 繋がらない=Warning）。超常は主観/客観の帰属が読めるか（I-D9）も見る。'}
+meta: {'sentence': '彫りの一番深い線が、光を受けて起き上がった——ように、H の目には映った。', 'kinds': ['supernatural'], 'matched': ['起き上が'], 'has_subjective_marker': True, 'sentence_index': 6, 'ask': 'この曖昧さは open_loops の登録謎に直接繋がるか（繋がる=通過 / 繋がらない=Warning）。超常は主観/客観の帰属が読めるか（I-D9）も見る。'}
 判定: ____（記入）    理由: ____（記入）
 
 ### 候補 5
@@ -84,7 +84,7 @@ snippet:
 ```
 読もうとするほど、逃げる。 まるで、読む側を読み返しているように。 （残り MP 1。あと一度きり）
 ```
-meta: {'sentence': 'まるで、読む側を読み返しているように。', 'kinds': ['supernatural'], 'matched': ['読み返'], 'has_subjective_marker': True, 'sentence_index': 10, 'ask': 'この曖昧さは open_loops の登録謎に直接繋がるか（繋がる=通過 / 繋がらない=Warning）。超常は主観/客観の帰属が読めるか（I-D9）も見る。'}
+meta: {'sentence': 'まるで、読む側を読み返しているように。', 'kinds': ['supernatural'], 'matched': ['読み返'], 'has_subjective_marker': True, 'sentence_index': 11, 'ask': 'この曖昧さは open_loops の登録謎に直接繋がるか（繋がる=通過 / 繋がらない=Warning）。超常は主観/客観の帰属が読めるか（I-D9）も見る。'}
 判定: ____（記入）    理由: ____（記入）
 
 ### 候補 6
@@ -92,5 +92,5 @@ snippet:
 ```
 （残り MP 1。あと一度きり） （答えじゃない。問いのほうが、こちらを覗いている） 背後で、湯の音が止んだ。
 ```
-meta: {'sentence': '（答えじゃない。問いのほうが、こちらを覗いている）', 'kinds': ['supernatural'], 'matched': ['覗'], 'has_subjective_marker': False, 'sentence_index': 12, 'ask': 'この曖昧さは open_loops の登録謎に直接繋がるか（繋がる=通過 / 繋がらない=Warning）。超常は主観/客観の帰属が読めるか（I-D9）も見る。'}
+meta: {'sentence': '（答えじゃない。問いのほうが、こちらを覗いている）', 'kinds': ['supernatural'], 'matched': ['覗'], 'has_subjective_marker': False, 'sentence_index': 13, 'ask': 'この曖昧さは open_loops の登録謎に直接繋がるか（繋がる=通過 / 繋がらない=Warning）。超常は主観/客観の帰属が読めるか（I-D9）も見る。'}
 判定: ____（記入）    理由: ____（記入）
