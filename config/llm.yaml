@@ -1,0 +1,22 @@
+# llm.yaml — LLM ロール設定（プロバイダ抽象 llm_provider.py が読む）
+#
+# 書込許可: editor（meta 的設定。Q3 で新規追加）。
+# 各ロールに provider / model / パラメータを割り当てる。ここは「どのモデルに何を
+# 問うか」の宣言だけで、プロンプト本体は qa_llm.py が持つ。
+#
+# 設計指針:
+#   - qa ロールは「軽量 Claude」を使う。Q3 で問うのは意味判断だけ（話者判定・
+#     重複判定・理干渉・妥当性）で、いずれも Q2 が切り出した小片が入力。
+#     Haiku 4.5（$1/$5 per MTok, 200K ctx）で十分。
+#   - temperature: 0 固定（同じ入力→ほぼ同じ判定）。Haiku 4.5 は temperature を
+#     受け付ける。※ qa ロールに temperature 非対応モデル（Opus 4.x / Sonnet 5 /
+#     Fable 5 等）を割り当てないこと（それらは temperature 指定で 400）。
+#   - JSON は output_config.format（structured outputs）で強制する。Haiku 4.5 は
+#     structured outputs 対応。
+
+roles:
+  qa:
+    provider: anthropic
+    model: claude-haiku-4-5   # 軽量 Claude
+    max_tokens: 512
+    temperature: 0

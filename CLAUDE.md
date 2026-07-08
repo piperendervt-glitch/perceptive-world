@@ -39,24 +39,24 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 
 ## CURRENT_MILESTONE
 
-**Q2: qa_deterministic.py にHYBRIDの候補抽出（C-9.7/C-10 数値露出, C-11.2 理干渉フラグ, C-9.1/C-9.2/C-9.4/C-12.3 のコード側）を実装。抽出のみ、判定はしない。**
+**Q3: LLM 判断項目を、Q2 の抽出小片を入力に、最小プロンプトで Claude に問う関数群を実装。プロバイダ抽象経由・temperature=0・JSON強制・壊れたら1回再要求。**
 
-### DONE 条件（Q2）
+### DONE 条件（Q3）
 
-- [ ] 各 HYBRID 項目について「LLM に問うべき小片」が構造化抽出される（`{item, candidates:[{snippet, meta}], needs_llm: true}`）。
-- [ ] `extract_numeric_mentions` が HP/MP/レベル/具体数値の言及箇所を「該当文±前後1文」で切り出す（本文全体は渡さない）。
-- [ ] `flag_ri_interference` が「requires 空 かつ label/intended_shift が理に言及」する option をフラグ。
-- [ ] `extract_cause_pairs` が各 delta の cause と本文事象候補を対にする。
-- [ ] B1 の**違反版**（story/ep-00-b1test-violation.md）で理干渉フラグが「対価なしの理破り」option（D）に立つ。
-- [ ] A2/A3 検証話で `extract_numeric_mentions` が数値言及を漏れなく抽出する。
-- [ ] 抽出のみ。判定（PASS/Major 等）はしない。LLM は呼ばない。
-- [ ] git commit 後、`vQ.2` タグが打たれている。
+- [ ] 各 LLM 項目が小片入力で判定を返す（`qa_llm.py`）: C-11.4（意味的重複）, C-11.2（理干渉）, C-9.7/C-10（話者）, C-12.1/C-12.2（選択反映）, C-9.5（変化量妥当性）。
+- [ ] 入力は**小片のみ**（本文全体・チェックリスト全文は渡さない）。C-11.4 は id+intended_shift だけ、C-11.2 はフラグ済み option の label/shift + 理の定義、C-9.7/C-10 は該当文±前後1文。
+- [ ] temperature=0（llm.yaml の qa ロール）、JSON 強制（output_config.format）、壊れたら 1 回だけ再要求。
+- [ ] モデルは `config/llm.yaml` の qa ロール（軽量 Claude = Haiku 4.5）から読む。プロバイダ抽象（`llm_provider.py`）経由。
+- [ ] B1 違反版で、飾り重複を C-11.4=**Warning**、対価なし理破りを C-11.2=**Blocker** で検出。
+- [ ] 現地人の数値露出 NG 例を C-9.7/C-10=**Major** で検出。B1 正しい版で C-11.4 は誤検出しない。
+- [ ] git commit 後、`vQ.3` タグが打たれている。
 
-### ハイブリッド QA の役割分担（Q2 時点）
+### ハイブリッド QA の役割分担（Q3 時点）
 
 - **CODE 領域**（決定論的に判定, Q1）: C-9.3, C-9.6, C-11.1, C-11.3。
-- **HYBRID 候補抽出**（コードが小片を抽出→後段で LLM が意味だけ判断, Q2）: C-9.7/C-10（数値露出）, C-11.2（理干渉）, C-9.1/C-9.2/C-9.4/C-12.3（cause↔事象）。**Q2 は抽出まで。判定は Q3 以降で LLM に渡す。**
-- **LLM 領域**（Q3 以降で接続）: 抽出された candidates に対する意味判断（invariants 適合, 飾り検出, 可視性帰属など）。
+- **HYBRID 候補抽出**（コードが小片を抽出, Q2）: C-9.7/C-10, C-11.2, C-9.1/C-9.2/C-9.4/C-12.3。`qa_deterministic.py`。
+- **LLM 判断**（抽出小片を最小プロンプトで軽量 Claude に問う, Q3）: C-11.4, C-11.2, C-9.7/C-10, C-12.1/C-12.2, C-9.5。`qa_llm.py` + `llm_provider.py` + `config/llm.yaml`。
+- **統合パイプライン**（Q4 以降）: CODE 判定 + 抽出 + LLM 判定を 1 本のレポートにまとめ、director→writer→qa→editor の一巡に載せる。
 
 ### 完了済みマイルストーン
 
@@ -66,10 +66,11 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 - **A3**: 数値の可視性規律の強制（tag `vA.3`）。
 - **B1**: 決定点の選択肢構造出力と C-11 検査（tag `vB.1`）。
 - **Q1**: qa_deterministic.py に CODE 項目（C-9.3/C-9.6/C-11.1/C-11.3）を実装（tag `vQ.1`）。
+- **Q2**: qa_deterministic.py に HYBRID 候補抽出を実装（抽出のみ・判定なし・LLM 不使用）（tag `vQ.2`）。
 
 ### 次のマイルストーン（指示があるまで着手しない）
 
-- **Q3 以降**: 抽出された candidates を実際に LLM に渡し、意味判断を統合（ハイブリッド QA 化）。
+- **Q4 以降**: CODE 判定 + 抽出 + LLM 判定を統合したハイブリッド QA パイプライン化。
 - **B2 以降**: 選択の記録と分岐実行。
 - **M2**: 第1話（ep-01）の本番執筆。director → writer → qa × 2 → editor → commit の一巡を通す。
 
