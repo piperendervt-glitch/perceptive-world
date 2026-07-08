@@ -1,0 +1,54 @@
+# play_log.yaml — 判定の構造化ログ（動画化を見据えた素材）
+#
+# 書込許可: editor（meta 領域。判定の副産物を記録する）。
+# TIER: 3（随時・メディア素材。context 常時参照ではない）。
+#
+# decision_log の拡張。各エントリは「誰が(char)/何を(action_type, chosen)/
+# 成否(tier)/代償(cost_applied)/結果(consequence)」を機械可読で持ち、後の外部
+# 動画生成に渡せる形にする。動画機能そのものはまだ作らない（素材化まで）。
+#
+# 出目(dice)は reveal_dice に関わらず必ず残す（内部真実の保持）。seed で再現可能。
+# 生成の器: play_log.py（make_play_log_entry / append_play_log）。
+#
+# 下は D3 の実例（playtest-01 Scene2「灯火で刻印を読む」を engine 既定コストで
+# 再導出したデモ。canon/status.yaml は書き換えていない）。
+
+- turn: 1
+  decision_id: D1
+  chosen: B（灯火で刻印を読む）
+  char: H
+  action_type: magic
+  attempted: true
+  blocked: null
+  dice:
+  - 2
+  - 5
+  roll_total: 7
+  modifier: 0
+  total: 7
+  target: 7
+  tier: success_with_cost
+  cost_applied:
+    mp: 2
+    id5_fired: true
+  consequence: 刻印は読めた——最後の一画で光が引き、読み返される感触だけが残る。女に指先の灯を見られ、玩具の石と笑った顔が消える。得た（断片）＝失った（露見せぬ
+    H 像）。
+  status_delta:
+  - char: H
+    change:
+      mp.cur: -2
+    cause: 魔法発動 (I-2, magic)
+  scene_ref: story/playtest-01-s2-rev.md#scene2
+  reveal_dice: true
+  seed: 3
+  resolve:
+    dice:
+    - 2
+    - 5
+    roll_total: 7
+    modifier: 0
+    total: 7
+    target: 7
+    tier: success_with_cost
+    margin: 0
+    seed: 3

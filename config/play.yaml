@@ -1,0 +1,12 @@
+# play.yaml — 再生（提示）設定（play_log.py が読む）
+#
+# 書込許可: editor（meta 的設定）。
+#
+# reveal_dice: 判定の出目を player に見せるか。
+#   true（既定）: dice / total / target / tier を提示する（普通の TRPG）。
+#   false       : tier の帰結（物語の形）だけ提示し、出目は内部ログのみに残す
+#                 （当初構想の「隠しモード」）。
+#
+# どちらのモードでも meta/play_log.yaml には出目を完全に記録する（内部真実の保持）。
+
+reveal_dice: true
