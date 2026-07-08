@@ -1,0 +1,140 @@
+# visual_bible.yaml — 画像生成用キャラ・バイブル（視覚記述子の固定）
+#
+# 書込許可: editor（meta 領域）。
+# TIER: 3（随時・メディア素材。play_log.yaml と同じくメディア化のための素材）。
+#
+# 目的: specs/core/characters.md と playtest-01 本文から視覚記述子を抽出・固定し、
+#       画像生成で**毎回同じ文字列**を使って一貫性を保つ。各キャラに英語/日本語の
+#       prompt_descriptor（そのまま貼って使う一行）と、内訳（年齢・髪・体格・服装・特徴）を持つ。
+#
+# canon 整合（矛盾させないための拘束）:
+#   - I-5: H の外見は現地人と区別できない → H は**現地の時代衣装**を着る。現代日本の服・小物は不可。
+#   - I-4: ステータスは現地人に見えず、便利表示ではなく「知ってしまう呪い」→ **画面に数値/HP・MP
+#          バー/レベル/ゲーム風 HUD を一切描かない**（world.md「数値は呪い」）。
+#   - world: 中世〜近世相当・魔法が社会に組み込まれたダークファンタジー。質素な農村。
+#   - I-1: 理は破れない → 魔法は控えめ・代償的に描く。派手な理破りの奇跡は描かない。
+#   - 命名: 役割 ID（H / 女）で管理。固有名詞は M2 以降。画像に名前文字を焼き込まない。
+#
+# provenance（各記述子の出所）:
+#   [canon]  characters.md / world.md / invariants.md / playtest-01 本文から直接。
+#   [fixed]  canon に指定がなく、一貫性のために本バイブルで確定した設計判断（canon と非矛盾）。
+#            H の性別=男性、画風=アニメ/漫画調 はユーザ確定（2026-07）。
+
+version: 1
+
+# ===========================================================================
+# style — 世界観トーンと描画指定（全キャラ共通・毎回付与）
+# ===========================================================================
+style:
+  medium:
+    en: "anime / manga-style illustration, clean line art with cel and soft shading, painterly muted backgrounds"
+    ja: "アニメ・漫画調イラスト、クリーンな線画＋セル塗り/やわらかい陰影、絵画的で彩度を抑えた背景"
+  tone:
+    en: "dark fantasy, quiet, austere, restrained; melancholy and isolation; the loneliness of one who knows too much"
+    ja: "ダークファンタジー、静か、質素、抑制的。憂いと孤立。知りすぎた者の孤独"
+  period_setting:
+    en: "medieval to early-modern rural world where magic is a humble, costly craft; poor herb-scented cottage, hearth and stone"
+    ja: "中世〜近世相当の農村。魔法は質素で代償を伴う技。薬草の匂いの粗末な小屋、炉と石"
+  palette:
+    en: "desaturated earth tones (bark, ash, wool, clay), deep shadow; a single cold pale-blue accent for conjured light"
+    ja: "彩度を落とした土色（樹皮・灰・羊毛・粘土）と濃い影。魔法の灯だけ冷たい青白い一点をアクセントに"
+  lighting:
+    en: "low-key chiaroscuro, hearth-fire and candle light, dim interiors, soft grain; never bright or cheerful"
+    ja: "ローキーの明暗、炉火と蝋燭の灯、薄暗い室内、やわらかな粒状感。明るく陽気にしない"
+  recurring_motif:
+    en: "the pale blue-white conjured flame ('灯火') and a small gray river-worn stone bearing faint carved marks"
+    ja: "青白い魔法の灯火と、川で磨かれた灰色の小石（薄い刻印）——反復して使うモチーフ"
+  # 全画像で禁止（canon 由来のハードルール）。
+  forbidden:
+    en:
+      - "no status UI, HP/MP bars, level numbers, floating stats, or game HUD (status is invisible to locals; it is a curse, not a display) [I-4]"
+      - "no modern clothing, gadgets, or Japanese contemporary items on anyone [I-5]"
+      - "no bright, saturated, or cheerful palette; no clean fantasy-hero glamour"
+      - "no flashy reality-breaking miracles; magic stays small and costly [I-1]"
+      - "no on-image proper names, captions, or watermarks (roles only: H, the woman)"
+    ja:
+      - "ステータス UI・HP/MP バー・レベル数値・浮遊ステータス・ゲーム風 HUD を描かない（数値は現地人に見えず、呪いであって表示ではない）[I-4]"
+      - "現代の衣服・機器・現代日本の小物を誰にも持たせない [I-5]"
+      - "明るい/高彩度/陽気なパレット、清潔な英雄的華やかさにしない"
+      - "派手な理破りの奇跡を描かない。魔法は小さく代償的 [I-1]"
+      - "画面内に固有名詞・キャプション・透かしを入れない（役割のみ: H / 女）"
+
+# ===========================================================================
+# characters — 記述子の固定（en/ja 両方。prompt_descriptor は毎回同じ文字列で使う）
+# ===========================================================================
+characters:
+
+  H:
+    role:
+      en: "protagonist, a reincarnator (modern-Japan office worker in his past life); outwardly indistinguishable from a local [canon: characters.md, I-5]"
+      ja: "主人公。転生者（前世は現代日本の社会人）。外見は現地人と区別できない [canon: characters.md, I-5]"
+    provenance_note: "性別=男性・髪/瞳/服装の具体は [fixed]（canon 未指定）。転生者・負傷・Lv1 一般人体格・毛布は [canon]。"
+    descriptors:
+      age:
+        en: "adult man, late 20s to mid 30s"          # [fixed] 社会人=成人 / 性別ユーザ確定
+        ja: "成人男性、20代後半〜30代半ば"
+      hair:
+        en: "short, slightly unkempt dark (black-brown) hair"   # [fixed] 現地人に紛れる地味さ
+        ja: "短めで少し乱れた暗色（黒〜焦げ茶）の髪"
+      eyes:
+        en: "dark, quiet, watchful eyes, faintly tired; they carry unspoken knowledge (he sees what others cannot)"  # [fixed] 知の格差=呪い(theme)
+        ja: "暗色で静かな、よく見る目。かすかに疲れ、言えない知識を宿す（他者に見えぬものを見てしまう）"
+      build:
+        en: "ordinary commoner build, average height, neither muscular nor frail (Lv1)"   # [canon] str8/mag8/vit9 一般人
+        ja: "一般人並みの体格、中背、筋肉質でも華奢でもない（Lv1）"
+      skin:
+        en: "plain, weather-touched"
+        ja: "素朴で、やや風にさらされた肌"
+      clothing:
+        en: "plain local period garb: a rough undyed tunic and worn woolen layers in muted earth tones, a travel-worn cloak; humble peasant footwear; absolutely no modern items [I-5]"
+        ja: "現地の時代衣装：粗い生成りのチュニックと擦り切れた羊毛の重ね着、土色の外套、質素な農民の履物。現代の小物は一切なし [I-5]"
+      distinctive:
+        en: "a bandaged wound (monster-claw injury), a coarse wool blanket over his knees when resting; sometimes cupping a small gray inscribed stone; a single pale-blue flame conjured at his fingertip"
+        ja: "包帯を巻いた傷（魔物の爪の傷）、休むとき膝に粗い羊毛の毛布。時に灰色の刻印石を手のひらに包む。指先に灯す青白い小さな灯火"
+      current_state:
+        en: "recovering from injury in the herb-scented cottage; guarded, inward"
+        ja: "薬草の小屋で負傷から回復中。警戒的で内向き"
+    prompt_descriptor:
+      en: "H — adult man late 20s–30s, short slightly unkempt dark hair, quiet watchful tired dark eyes carrying hidden knowledge, ordinary average build, plain rough undyed tunic and worn muted-earth woolen layers with a travel-worn cloak, humble peasant footwear, a bandaged wound; anime/manga illustration, dark fantasy, quiet and austere, desaturated earth tones, low-key hearth lighting; no modern items, no status UI or numbers"
+      ja: "H — 成人男性20代後半〜30代、短めで少し乱れた暗色の髪、静かでよく見る疲れた暗色の目（隠した知識を宿す）、一般人並みの中背体格、粗い生成りのチュニックと土色の羊毛の重ね着＋擦り切れた外套、質素な農民の履物、包帯の傷。アニメ・漫画調、ダークファンタジー、静かで質素、彩度を抑えた土色、ローキーの炉火の灯り。現代の小物なし、ステータス UI・数値なし"
+
+  woman:
+    role:
+      en: "the local woman — a native villager who shelters and tends H; a healer of the herb-scented cottage; an NPC with no status numbers [canon: playtest-01, I-4]"
+      ja: "現地人の女——H をかくまい介抱する土地の者。薬草の小屋の癒し手。数値を持たない NPC [canon: playtest-01, I-4]"
+    provenance_note: "現地人・小屋で炉/竈を扱い介抱・薬草・玩具の石を笑う→露見で警戒 は [canon]。年齢/髪/服装の具体は [fixed]。"
+    descriptors:
+      age:
+        en: "adult woman of indeterminate age, weathered by work (roughly 30s–40s)"   # [fixed]
+        ja: "年齢のはっきりしない成人女性、労働に晒された風貌（およそ30〜40代）"
+      hair:
+        en: "dark hair pulled back simply, practical for cottage work; a few loose strands"   # [fixed]
+        ja: "暗色の髪を簡素に後ろでまとめ、小屋仕事向きに。ほつれ毛が少し"
+      eyes:
+        en: "steady, observant eyes; warm at first, then carefully wary"   # [canon] 笑う→確かめる目
+        ja: "落ち着いた観察的な目。はじめ温かく、のちに用心深く確かめる"
+      build:
+        en: "modest, practical build, work-worn hands"
+        ja: "質素で実用的な体つき、働き慣れた手"
+      skin:
+        en: "plain, herb- and smoke-touched"
+        ja: "素朴で、薬草と煙にさらされた肌"
+      clothing:
+        en: "simple peasant dress in muted natural-dyed wool and linen, an apron, a headscarf or kerchief; earth and ash tones; humble and austere [I-5 consistent]"
+        ja: "自然染めの羊毛と麻の簡素な農民服、前掛け、頭巾か手拭い。土色と灰色。質素で慎ましい [I-5 と整合]"
+      distinctive:
+        en: "herb-stained fingers; often at the hearth or drawing hot water into a bowl; the small gray stone she found is a mere trinket to her (she cannot perceive its marks)"
+        ja: "薬草に染まった指先。よく炉のそば、または椀に湯を汲んでいる。拾った灰色の石は彼女には玩具にすぎない（刻印を知覚できない）"
+      current_state:
+        en: "tending the fire and the wounded guest; her easy laugh hardens once she glimpses the conjured light"
+        ja: "炉と傷ついた客の世話。気さくな笑みは、魔法の灯を見た瞬間に硬くなる"
+    prompt_descriptor:
+      en: "the woman — adult native villager (30s–40s), dark hair pulled back simply with loose strands, steady observant eyes warm then wary, modest work-worn build with herb-stained hands, simple muted natural-dyed peasant dress with apron and headscarf in earth and ash tones; anime/manga illustration, dark fantasy, quiet and austere, desaturated palette, low-key hearth lighting; no modern items, no status UI or numbers"
+      ja: "女 — 成人の土地の者（30〜40代）、暗色の髪を簡素にまとめほつれ毛、落ち着いた観察的な目（温→用心）、質素で働き慣れた体つきと薬草に染まった指、自然染めの簡素な農民服＋前掛け＋頭巾（土色・灰色）。アニメ・漫画調、ダークファンタジー、静かで質素、彩度を抑えたパレット、ローキーの炉火の灯り。現代の小物なし、ステータス UI・数値なし"
+
+# 参照
+references:
+  - characters.md   # want/need/lie と役割 ID（視覚以外の設定源）
+  - world.md        # ダークファンタジー・中世〜近世・魔法社会
+  - invariants.md   # I-4（数値不可視=呪い）, I-5（区別不能）, I-1（理不可侵）
+  - story/playtest-01-s1-rev.md, story/playtest-01-s2-rev.md   # 小屋・炉・灯火・刻印石・女の描写
