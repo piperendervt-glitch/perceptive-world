@@ -39,17 +39,24 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 
 ## CURRENT_MILESTONE
 
-**CL4: playtest-01 を D-clarity で回帰し、正解セット(5フラグ/2通過)と一致するか検証。一致後、Scene1/2 を詩性を保ったまま規律に沿って書き直す。**
+**D1（判定エンジン）: resolve.py に判定エンジンを実装。2D6＋修正値を振り、目標値と比較して3段階(完全成功/成功だが代償/失敗)を返す。乱数はコードが独占。**
 
-### DONE 条件（CL4）
+### DONE 条件（D1・判定エンジン）
 
-- [ ] D-clarity が正解セットの 5 つを Warning・2 つを通過と判定し、書き直し版が骨を明快にしつつ詩的密度と謎(6,7)を保持する。
-- [ ] playtest-01 Scene1/2 を qa_run.py に通し、D-clarity 小片パックを生成→ open_loops 照合で仕分け（正解1〜5=Warning / 6,7=通過）。
-- [ ] 不一致は「抽出漏れ / 仕分け誤り」で分類して報告（#5 は欠落型でコード未抽出＝抽出漏れ、判定は一致）。
-- [ ] 書き直し版 `story/playtest-01-s{1,2}-rev.md` を作り、1〜5 を一義化（詩性保持）、6,7 は無改変で保護。「起き上がった」は主観と明示（客観だと理破り Blocker）。
-- [ ] 書き直し版を QA 再通過（CODE 通過・D-clarity 骨の不明瞭ゼロ）。`story/playtest-01.md` に元と対比で併記。
-- [ ] 検証専用。canon/active 未登録。次 Step(C/D) には手を付けない（先回りしない）。
-- [ ] git commit 後、`vCL.4` タグが打たれている。
+- [ ] `resolve.py` が `{roll(2d6), modifier, target, tier, ...}` を決定論的に（シード固定で再現可能に）返す。
+- [ ] 3 段階の境界（full_success / success_with_cost / failure）とゾロ目（critical 6-6 / fumble 1-1）が定義される。
+- [ ] 乱数はコードが独占（LLM に振らせない）。seed で再現可能。判定基準は Ordia 自前（アリアンロッドの本文・数表・固有名詞をコピーしない）。
+- [ ] 構造化ログの器（`make_log_entry`）を用意（D3 で拡張）。resolve 結果をそのまま入れ子で載せられる。
+- [ ] 回帰: seed 固定の再現性、5 tier の実例各1、2D6 が 7 中心の釣鐘型であることを確認。
+- [ ] ステータス連動（D2）以降は先回りしない。本編は書かない。
+- [ ] git commit 後、`vD.1` タグが打たれている。
+
+### 判定エンジン（resolve.py・D1）
+
+- **3 段階＋ゾロ目**: `critical`(6-6・無条件) / `full_success`(total≥target+MARGIN_BAND) / `success_with_cost`(target≤total<target+MARGIN_BAND・**I-D5 発火**) / `failure`(total<target) / `fumble`(1-1・無条件)。
+- **MARGIN_BAND=3**（代償帯の幅・調整可能）。ゾロ目は目標比較より優先（無条件）。
+- **乱数はコード独占**: `resolve(modifier, target, seed=None)`。seed 未指定でも再現可能なシードを引いて結果に記録。`classify()` は純関数（dice+total+target のみ）で境界テスト可能。
+- D2 では `modifier` を status から算出、`target` は Adjudicator が決める（D1 では引数）。
 
 ### ハイブリッド QA の役割分担（現行・道A）
 
@@ -81,10 +88,13 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 - **CL2**: writer.md に I-D8/I-D9 に沿う執筆指針（明瞭さの規律）を追加（tag `vCL.2`）。
 - **CL3**: drama_checklist.md に D-clarity、qa_deterministic.py に `extract_ambiguity_candidates`（抽出のみ・判定なし）（tag `vCL.3`）。
 - **CL4**: playtest-01 を D-clarity で回帰（正解 7/7 一致）し、Scene1/2 を詩性保持で書き直し（`*-rev.md`）（tag `vCL.4`）。
+- **D1（判定エンジン）**: resolve.py に 2D6＋修正→3段階（＋ゾロ目 critical/fumble）の判定エンジン。乱数はコード独占・seed 再現可能（tag `vD.1`）。
 
 ### 次のマイルストーン（指示があるまで着手しない）
 
-- **Step C/D（editor のローカル化 等）**: 指示があるまで着手しない。
+- **D2**: 判定エンジンの status 連動（modifier を canon/status.yaml から算出）。指示があるまで着手しない。
+- **D3**: resolve 結果の構造化ログ化（`make_log_entry` の器を実運用に接続）。
+- **Step C（editor のローカル化 等）**: 指示があるまで着手しない。
 - **B2 以降**: 選択の記録と分岐実行。
 - **M2**: 第1話（ep-01）の本番執筆。director → writer → qa × 2 → editor → commit の一巡を通す。
 
