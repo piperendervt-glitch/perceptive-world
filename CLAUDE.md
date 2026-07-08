@@ -39,17 +39,19 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 
 ## CURRENT_MILESTONE
 
-**D1（判定エンジン）: resolve.py に判定エンジンを実装。2D6＋修正値を振り、目標値と比較して3段階(完全成功/成功だが代償/失敗)を返す。乱数はコードが独占。**
+**D2（ステータス連動）: 判定の修正値を canon/status.yaml の能力値から算出。行動種別→使用能力の対応を定義。魔法判定はMPコスト(I-2)と接続。**
 
-### DONE 条件（D1・判定エンジン）
+### DONE 条件（D2・ステータス連動）
 
-- [ ] `resolve.py` が `{roll(2d6), modifier, target, tier, ...}` を決定論的に（シード固定で再現可能に）返す。
-- [ ] 3 段階の境界（full_success / success_with_cost / failure）とゾロ目（critical 6-6 / fumble 1-1）が定義される。
-- [ ] 乱数はコードが独占（LLM に振らせない）。seed で再現可能。判定基準は Ordia 自前（アリアンロッドの本文・数表・固有名詞をコピーしない）。
-- [ ] 構造化ログの器（`make_log_entry`）を用意（D3 で拡張）。resolve 結果をそのまま入れ子で載せられる。
-- [ ] 回帰: seed 固定の再現性、5 tier の実例各1、2D6 が 7 中心の釣鐘型であることを確認。
-- [ ] ステータス連動（D2）以降は先回りしない。本編は書かない。
-- [ ] git commit 後、`vD.1` タグが打たれている。
+- [x] 行動種別に応じて status から modifier が決まり、魔法判定はMP消費を伴う。Hの低いmagが魔法判定の不利として効く。
+- [x] 行動種別→使用能力の対応表（Ordia 自前）: `magic→mag / force→str / endure→vit`。
+- [x] `modifier_from_status(action_type, char, status)` が `attribute - ABILITY_PIVOT(=8)` で修正値を算出（純関数）。
+- [x] 魔法的判定は I-2 と接続: MP 消費（Step A/B の delta を再利用）。MP 不足なら試行不可（C-11.1 と整合）。
+- [x] D1 の `resolve()` は無改変。供給側（`resolve_action`）を足して modifier/MP を status から供給。
+- [x] I-3 整合: 血統のない H は mag=8 → 魔法 modifier=0（血統持ちより低い＝不利）が数値として効く。
+- [x] 回帰: modifier 算出、MP 不足の弾き、同 seed で mag 高いほど成功寄り（数値が判定を左右）。
+- [x] 出目モード・描写（D3）は先回りしない。本編は書かない。
+- [x] git commit 後、`vD.2` タグが打たれている。
 
 ### 判定エンジン（resolve.py・D1）
 
@@ -57,6 +59,16 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 - **MARGIN_BAND=3**（代償帯の幅・調整可能）。ゾロ目は目標比較より優先（無条件）。
 - **乱数はコード独占**: `resolve(modifier, target, seed=None)`。seed 未指定でも再現可能なシードを引いて結果に記録。`classify()` は純関数（dice+total+target のみ）で境界テスト可能。
 - D2 では `modifier` を status から算出、`target` は Adjudicator が決める（D1 では引数）。
+
+### ステータス連動（status_resolve.py・D2）
+
+- **D1 は無改変**。`status_resolve.py` が resolve() の手前に「供給層」を足す（`from resolve import resolve, make_log_entry`）。
+- **行動種別→使用能力（Ordia 自前の対応表）**: `magic→mag`（魔法的・血統相関 I-3 の効く軸）/ `force→str`（力技）/ `endure→vit`（耐久）。魔法的行動＝`MAGIC_ACTIONS`。
+- **modifier 算出**: `modifier_from_status(action_type, char, status) = attribute - ABILITY_PIVOT`。`ABILITY_PIVOT=8`（status.yaml の「血統補正なしの一般人相当」＝±0）。純関数。
+- **魔法は MP 消費（I-2）**: `MAGIC_MP_COST=2`（可変・引数で上書き）。`resolve_action()` は魔法時に MP を引き、`status_delta:[{char, change:{mp.cur:-cost}, cause}]`（Step A/B の delta 機構を再利用、適用は editor）を添える。
+- **MP 不足は試行不可（C-11.1 整合）**: `cur_mp < cost` なら乱数を振らず `attempted:false, blocked:insufficient_mp` を返す。`magic_requires()` が同形式の `requires:{mp:cost}` を吐き、決定点で C-11.1 に載せられる。
+- **I-3 が数値として効く**: 血統のない H は mag=8 → 魔法 modifier=0。血統持ちは mag 上振れ→正の modifier。同 seed で mag が高いほど tier は成功寄り（回帰で単調性を確認）。
+- **resolve は verbatim 内包**: `resolve_action(...)["resolve"]` は D1 の返り値そのまま。`make_log_entry` にそのまま載る（D3 で拡張）。
 
 ### ハイブリッド QA の役割分担（現行・道A）
 
@@ -89,11 +101,11 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 - **CL3**: drama_checklist.md に D-clarity、qa_deterministic.py に `extract_ambiguity_candidates`（抽出のみ・判定なし）（tag `vCL.3`）。
 - **CL4**: playtest-01 を D-clarity で回帰（正解 7/7 一致）し、Scene1/2 を詩性保持で書き直し（`*-rev.md`）（tag `vCL.4`）。
 - **D1（判定エンジン）**: resolve.py に 2D6＋修正→3段階（＋ゾロ目 critical/fumble）の判定エンジン。乱数はコード独占・seed 再現可能（tag `vD.1`）。
+- **D2（ステータス連動）**: status_resolve.py に 行動種別→使用能力の対応、`modifier_from_status`（attr-PIVOT）、魔法判定の MP 消費（I-2）と MP 不足の弾き（C-11.1 整合）。D1 は無改変で供給側を追加。Hの低い mag が魔法判定の不利として効く（I-3）（tag `vD.2`）。
 
 ### 次のマイルストーン（指示があるまで着手しない）
 
-- **D2**: 判定エンジンの status 連動（modifier を canon/status.yaml から算出）。指示があるまで着手しない。
-- **D3**: resolve 結果の構造化ログ化（`make_log_entry` の器を実運用に接続）。
+- **D3**: resolve 結果の構造化ログ化（`make_log_entry` の器を実運用に接続）。出目モード・描写もここ以降。
 - **Step C（editor のローカル化 等）**: 指示があるまで着手しない。
 - **B2 以降**: 選択の記録と分岐実行。
 - **M2**: 第1話（ep-01）の本番執筆。director → writer → qa × 2 → editor → commit の一巡を通す。
