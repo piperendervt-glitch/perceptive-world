@@ -39,22 +39,24 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 
 ## CURRENT_MILESTONE
 
-**Q1: qa_deterministic.py に CODE 項目（C-9.3 / C-9.6 / C-11.1 / C-11.3）を実装。LLM は呼ばない。**
+**Q2: qa_deterministic.py にHYBRIDの候補抽出（C-9.7/C-10 数値露出, C-11.2 理干渉フラグ, C-9.1/C-9.2/C-9.4/C-12.3 のコード側）を実装。抽出のみ、判定はしない。**
 
-### DONE 条件（Q1）
+### DONE 条件（Q2）
 
-- [ ] `qa_deterministic.py` に 4 つの CODE 項目が実装され、LLM を一切呼ばずに JSON/表形式で判定を返す。
-- [ ] 同じ入力に対して常に同じ結果（temperature も乱数もない）。
-- [ ] decision ブロックと status_delta のパーサが writer 出力の YAML を読める。壊れた入力は明示エラー。
-- [ ] B1 の**違反版**（story/ep-00-b1test-violation.md）で `C-11.1=Major`（MP 不足）を検出する。
-- [ ] B1 の**正しい版**（story/ep-00-b1test.md）で CODE 4 項目すべて **通過**。
-- [ ] git commit 後、`vQ.1` タグが打たれている。
+- [ ] 各 HYBRID 項目について「LLM に問うべき小片」が構造化抽出される（`{item, candidates:[{snippet, meta}], needs_llm: true}`）。
+- [ ] `extract_numeric_mentions` が HP/MP/レベル/具体数値の言及箇所を「該当文±前後1文」で切り出す（本文全体は渡さない）。
+- [ ] `flag_ri_interference` が「requires 空 かつ label/intended_shift が理に言及」する option をフラグ。
+- [ ] `extract_cause_pairs` が各 delta の cause と本文事象候補を対にする。
+- [ ] B1 の**違反版**（story/ep-00-b1test-violation.md）で理干渉フラグが「対価なしの理破り」option（D）に立つ。
+- [ ] A2/A3 検証話で `extract_numeric_mentions` が数値言及を漏れなく抽出する。
+- [ ] 抽出のみ。判定（PASS/Major 等）はしない。LLM は呼ばない。
+- [ ] git commit 後、`vQ.2` タグが打たれている。
 
-### ハイブリッド QA の役割分担（Q1 時点）
+### ハイブリッド QA の役割分担（Q2 時点）
 
-- **CODE 領域**（qa_deterministic.py で決定論的に判定）: C-9.3, C-9.6, C-11.1, C-11.3。
-- **LLM 領域**（Q2 以降で扱う。Q1 時点では Claude が担当）: C-11.2（invariants 適合）, C-11.4（飾り検出）, C-10（可視性）, その他意味理解が要る項目。
-- LLM 領域のローカル化は Phase 0 で不合格。Blocker/Major を見逃すため、Claude に残す。
+- **CODE 領域**（決定論的に判定, Q1）: C-9.3, C-9.6, C-11.1, C-11.3。
+- **HYBRID 候補抽出**（コードが小片を抽出→後段で LLM が意味だけ判断, Q2）: C-9.7/C-10（数値露出）, C-11.2（理干渉）, C-9.1/C-9.2/C-9.4/C-12.3（cause↔事象）。**Q2 は抽出まで。判定は Q3 以降で LLM に渡す。**
+- **LLM 領域**（Q3 以降で接続）: 抽出された candidates に対する意味判断（invariants 適合, 飾り検出, 可視性帰属など）。
 
 ### 完了済みマイルストーン
 
@@ -63,10 +65,11 @@ qa（consistency & drama の両方を検査、qa/reports/ に出力）
 - **A2**: writer delta → 整合性QA 数値検査 → editor 適用 の1周（tag `vA.2`）。
 - **A3**: 数値の可視性規律の強制（tag `vA.3`）。
 - **B1**: 決定点の選択肢構造出力と C-11 検査（tag `vB.1`）。
+- **Q1**: qa_deterministic.py に CODE 項目（C-9.3/C-9.6/C-11.1/C-11.3）を実装（tag `vQ.1`）。
 
 ### 次のマイルストーン（指示があるまで着手しない）
 
-- **Q2 以降**: LLM を呼ぶ意味理解系 QA（C-11.2 など）の統合、ハイブリッド QA 化。
+- **Q3 以降**: 抽出された candidates を実際に LLM に渡し、意味判断を統合（ハイブリッド QA 化）。
 - **B2 以降**: 選択の記録と分岐実行。
 - **M2**: 第1話（ep-01）の本番執筆。director → writer → qa × 2 → editor → commit の一巡を通す。
 
