@@ -1,0 +1,190 @@
+# image_prompts.yaml — 画像生成プロンプト（キャラ一貫性テスト用）
+#
+# 書込許可: editor（meta 領域。メディア素材）。
+# TIER: 3（随時・メディア素材。visual_bible.yaml / play_log.yaml と同系列）。
+#
+# 目的:
+#   visual_bible.yaml で固定した記述子を使い、同じ H が別の状況で登場する画像の
+#   プロンプトを組む。参照画像（H の基準画像）＋自然言語の詳細記述で、Grok Imagine /
+#   FLUX 系のツールが一貫したキャラを再生成できるようにする。要素分解（subject /
+#   secondary / scene / composition / style / negative）でツール中立に保つ。
+#
+# 基準画像（H の anchor）:
+#   base_image_ref: story/playtest-01-s2-d4-success_with_cost.md の Scene2
+#     「灯火で刻印を読む」。**生成済み**。H の顔・髪・体格・衣装の視覚基準はこの画像。
+#   → 本ファイルの各プロンプトは、この基準画像を **参照画像として添付** する前提で書く。
+#     composition は基準画像に近いフレーミング（同じ小屋の内部・炉・ローキーの明暗）を
+#     保つ指示を含める＝一貫性の生命線。
+#
+# 一貫性のために効かせる要素:
+#   1. subject を visual_bible.characters.H.prompt_descriptor から **一字一句そのまま** 転記。
+#   2. secondary（女）を visual_bible.characters.woman.prompt_descriptor から **そのまま** 転記。
+#   3. style を visual_bible.style（medium/tone/palette/lighting）に一致させる。
+#   4. negative を visual_bible.style.forbidden から **そのまま** 転記（I-4/I-5/I-1）。
+#   5. 基準画像に近いカメラ距離・光源位置を composition に明記。
+#
+# provenance:
+#   [canon]  characters.md / world.md / invariants.md / playtest-01 本文・play_log から直接。
+#   [fixed]  一貫性のため本系列（visual_bible）で確定した設計判断（canon と非矛盾）。
+
+version: 1
+base_image_ref: story/playtest-01-s2-d4-success_with_cost.md  # H の基準画像（生成済み・Scene2）
+
+prompts:
+
+  # =========================================================================
+  # img-s1-stone-handed — Scene1「石を渡される瞬間」（灯火前・炉火のみ）
+  # 出所: story/playtest-01-s1-rev.md（女が小石を H の手のひらに置く）
+  #       play_log turn:1 の判定 D1 に至る直前のシーン（scene_ref の一段手前）。
+  # 整合性の要:【この時点で灯火はまだ灯していない】→ 青白い光は画面に無い。
+  #            光源は炉火のみ。青白い accent は description にも置かず、negative でも封じる。
+  # =========================================================================
+  - id: img-s1-stone-handed
+    title:
+      en: "Scene 1 — the stone is handed over (before the flame; hearth-light only)"
+      ja: "Scene1 — 石を渡される瞬間（灯火の前・炉火のみ）"
+    source_ref: story/playtest-01-s1-rev.md          # [canon] Scene1 本文
+    play_log_scene_ref: story/playtest-01-s2-d4-success_with_cost.md  # この判定に至る手前
+
+    # 1. subject — visual_bible.characters.H.prompt_descriptor を一字一句そのまま（一貫性の生命線）
+    subject:
+      en: "H — adult man in his mid-20s (a young adult, not a boy or adolescent), short slightly unkempt dark hair, quiet watchful tired dark eyes carrying hidden knowledge, neutral expressionless face by default, ordinary average build, plain rough undyed tunic and worn muted-earth woolen layers with a travel-worn cloak, humble peasant footwear, a bandage wrapping his right hand from the back of the hand up to the mid-forearm; anime/manga illustration, dark fantasy, quiet and austere, desaturated earth tones, low-key hearth lighting; no modern items, no status UI or numbers"
+      ja: "H — 20代半ばの成人男性（若い成人。少年・思春期には描かない）、短めで少し乱れた暗色の髪、静かでよく見る疲れた暗色の目（隠した知識を宿す）、デフォルトは無表情、一般人並みの中背体格、粗い生成りのチュニックと土色の羊毛の重ね着＋擦り切れた外套、質素な農民の履物、右手の甲から前腕中ほどまで巻いた包帯。アニメ・漫画調、ダークファンタジー、静かで質素、彩度を抑えた土色、ローキーの炉火の灯り。現代の小物なし、ステータス UI・数値なし"
+
+    # 2. secondary — visual_bible.characters.woman.prompt_descriptor をそのまま
+    secondary:
+      en: "the woman — adult native villager (30s–40s), dark hair pulled back simply with loose strands, steady observant eyes warm then wary, modest work-worn build with herb-stained hands, simple muted natural-dyed peasant dress with apron and headscarf in earth and ash tones; anime/manga illustration, dark fantasy, quiet and austere, desaturated palette, low-key hearth lighting; no modern items, no status UI or numbers"
+      ja: "女 — 成人の土地の者（30〜40代）、暗色の髪を簡素にまとめほつれ毛、落ち着いた観察的な目（温→用心）、質素で働き慣れた体つきと薬草に染まった指、自然染めの簡素な農民服＋前掛け＋頭巾（土色・灰色）。アニメ・漫画調、ダークファンタジー、静かで質素、彩度を抑えたパレット、ローキーの炉火の灯り。現代の小物なし、ステータス UI・数値なし"
+    secondary_provenance:
+      note: "女の登場＝ [canon]（Scene1 本文で女が石を手渡す）。年齢/髪/服装の具体は [fixed]、炉のそばで玩具の石として差し出す挙動は [canon]。"
+
+    # 3. scene — 自然言語の描写文（場所・動作・光源・空気）
+    scene:
+      en: "Inside a poor herb-scented cottage in a cold cottage corner, early in the day. The woman leans in and gently sets a small gray river-worn stone into H's open palm, offering it lightly the way one hands a child a toy; her expression is still warm and unsuspecting. H looks down at the little stone in his hand, on the very cusp of noticing the faint carved marks on it — not yet alarmed, not yet knowing. The only light is the low hearth-fire: warm amber glow, deep shadows, herbs and a bowl nearby. There is NO blue light anywhere — he has not conjured any flame; his fingertips are dark and ordinary. A quiet, humble domestic moment held just before everything turns."
+      ja: "薄暗い薬草の匂いのする粗末な小屋の隅、朝方。女が身を寄せ、灰色の川で磨かれた小石を H の開いた手のひらにそっと置く——子どもに玩具を渡すような気軽さで。女の顔はまだ温かく、何も疑っていない。H は手の中の小石を見下ろし、表の浅い彫りに気づく寸前——まだ警戒も、知りもしていない。光は低い炉火のみ：暖かい琥珀色の光、深い影、そばに薬草と椀。画面に青い光は一切ない——H はまだ灯火を灯しておらず、指先は暗く普通のまま。すべてが反転する直前の、静かで慎ましい家内の一瞬。"
+
+    # 4. composition — カメラ角度・距離・光源位置（基準画像に近いフレーミングを保つ）
+    composition:
+      en: "Interior two-shot, medium to medium-close, at seated eye level. Keep the same austere cottage interior, the same H face/hair/tunic and the same low-key hearth key-light as the reference base image (Scene 2), so the character reads as identical. Hearth is the single key light coming from one lower side (warm), leaving the rest in soft shadow. H's open palm and the small gray stone sit near the lower-center foreground as the focal point; the woman's hand and face are close beside, mid-frame. Framing kept close to the base image's distance and lens for continuity — no new bright light sources introduced."
+      ja: "室内の二人構図、ミディアム〜ミディアムクローズ、座った視線の高さ。基準画像（Scene2）と同じ質素な小屋内部・同じ H の顔/髪/チュニック・同じローキーの炉火のキーライトを保ち、キャラが同一と読めるようにする。炉火が唯一のキーライトで片側の下方から（暖色）、残りはやわらかい影。H の開いた手のひらと灰色の小石を下部中央の前景＝焦点に置く。女の手と顔はすぐ隣、中景。連続性のため基準画像に近いカメラ距離とレンズを保つ——新たな明るい光源は加えない。"
+
+    # 5. style — visual_bible.style（medium/tone/palette/lighting）
+    style:
+      medium:
+        en: "anime / manga-style illustration, clean line art with cel and soft shading, painterly muted backgrounds"
+        ja: "アニメ・漫画調イラスト、クリーンな線画＋セル塗り/やわらかい陰影、絵画的で彩度を抑えた背景"
+      tone:
+        en: "dark fantasy, quiet, austere, restrained; melancholy and isolation; the loneliness of one who knows too much"
+        ja: "ダークファンタジー、静か、質素、抑制的。憂いと孤立。知りすぎた者の孤独"
+      palette:
+        en: "desaturated earth tones (bark, ash, wool, clay), deep shadow — WITHOUT the cold pale-blue accent here (no conjured light yet)"
+        ja: "彩度を落とした土色（樹皮・灰・羊毛・粘土）と濃い影——ここでは冷たい青白い accent を使わない（灯火はまだ無い）"
+      lighting:
+        en: "low-key chiaroscuro, hearth-fire only, dim interior, soft grain; never bright or cheerful"
+        ja: "ローキーの明暗、炉火のみ、薄暗い室内、やわらかな粒状感。明るく陽気にしない"
+
+    # 6. negative — visual_bible.style.forbidden をそのまま ＋ このシーン固有（青い光の封じ）
+    negative:
+      en:
+        - "no status UI, HP/MP bars, level numbers, floating stats, or game HUD (status is invisible to locals; it is a curse, not a display) [I-4]"
+        - "no modern clothing, gadgets, or Japanese contemporary items on anyone [I-5]"
+        - "no bright, saturated, or cheerful palette; no clean fantasy-hero glamour"
+        - "no flashy reality-breaking miracles; magic stays small and costly [I-1]"
+        - "no on-image proper names, captions, or watermarks (roles only: H, the woman)"
+        - "no pale-blue or blue conjured flame/glow, no magical light of any kind at his fingertips (the flame is NOT lit yet in this scene) [scene-specific]"
+      ja:
+        - "ステータス UI・HP/MP バー・レベル数値・浮遊ステータス・ゲーム風 HUD を描かない [I-4]"
+        - "現代の衣服・機器・現代日本の小物を誰にも持たせない [I-5]"
+        - "明るい/高彩度/陽気なパレット、清潔な英雄的華やかさにしない"
+        - "派手な理破りの奇跡を描かない。魔法は小さく代償的 [I-1]"
+        - "画面内に固有名詞・キャプション・透かしを入れない（役割のみ: H / 女）"
+        - "青白い/青い灯火・魔法の光を指先やどこにも描かない（このシーンでは灯火はまだ灯していない）[シーン固有]"
+
+    # 7. reference_note
+    reference_note:
+      en: "Attach the generated Scene-2 base image of H as the reference image. Match H's face, hair, build, tunic and the hearth key-light to it; only the situation (stone being handed over, no flame) differs."
+      ja: "生成済みの H の基準画像（Scene2）を参照画像として添付する。H の顔・髪・体格・チュニック・炉火のキーライトを基準画像に合わせ、状況（石を渡される・灯火なし）だけを変える。"
+
+  # =========================================================================
+  # img-s2b-revealed — Scene2「露見の瞬間」（極小の青白い灯り＋女が振り返りかけ）
+  # 出所: story/playtest-01-s2-d4-success_with_cost.md（canonical・success_with_cost）
+  #       play_log turn:1 の consequence「得た(断片)=失った(露見せぬH像)」に対応（I-D5）。
+  # 構図で I-D7（情報格差）: 知る者(H, 光を持つ) と 知らぬ者(女, これから知る) の対比。
+  # =========================================================================
+  - id: img-s2b-revealed
+    title:
+      en: "Scene 2 — the moment of exposure (a tiny pale-blue flame; the woman half-turning)"
+      ja: "Scene2 — 露見の瞬間（極小の青白い灯り・女が振り返りかけ）"
+    source_ref: story/playtest-01-s2-d4-success_with_cost.md  # [canon] Scene2 本文（canonical）
+    play_log_ref:
+      turn: 1
+      tier: success_with_cost
+      consequence: "一語「見て」だけ読めたが、女に指先の光を見られ露見（得た＝失った, I-D5）。"
+
+    # 1. subject — H.prompt_descriptor そのまま
+    subject:
+      en: "H — adult man in his mid-20s (a young adult, not a boy or adolescent), short slightly unkempt dark hair, quiet watchful tired dark eyes carrying hidden knowledge, neutral expressionless face by default, ordinary average build, plain rough undyed tunic and worn muted-earth woolen layers with a travel-worn cloak, humble peasant footwear, a bandage wrapping his right hand from the back of the hand up to the mid-forearm; anime/manga illustration, dark fantasy, quiet and austere, desaturated earth tones, low-key hearth lighting; no modern items, no status UI or numbers"
+      ja: "H — 20代半ばの成人男性（若い成人。少年・思春期には描かない）、短めで少し乱れた暗色の髪、静かでよく見る疲れた暗色の目（隠した知識を宿す）、デフォルトは無表情、一般人並みの中背体格、粗い生成りのチュニックと土色の羊毛の重ね着＋擦り切れた外套、質素な農民の履物、右手の甲から前腕中ほどまで巻いた包帯。アニメ・漫画調、ダークファンタジー、静かで質素、彩度を抑えた土色、ローキーの炉火の灯り。現代の小物なし、ステータス UI・数値なし"
+
+    # 2. secondary — woman.prompt_descriptor そのまま
+    secondary:
+      en: "the woman — adult native villager (30s–40s), dark hair pulled back simply with loose strands, steady observant eyes warm then wary, modest work-worn build with herb-stained hands, simple muted natural-dyed peasant dress with apron and headscarf in earth and ash tones; anime/manga illustration, dark fantasy, quiet and austere, desaturated palette, low-key hearth lighting; no modern items, no status UI or numbers"
+      ja: "女 — 成人の土地の者（30〜40代）、暗色の髪を簡素にまとめほつれ毛、落ち着いた観察的な目（温→用心）、質素で働き慣れた体つきと薬草に染まった指、自然染めの簡素な農民服＋前掛け＋頭巾（土色・灰色）。アニメ・漫画調、ダークファンタジー、静かで質素、彩度を抑えたパレット、ローキーの炉火の灯り。現代の小物なし、ステータス UI・数値なし"
+    secondary_provenance:
+      note: "女が湯気の向こうで振り返り、玩具の石だと笑った顔が消え『確かめる目』になる＝ [canon]（Scene2 本文）。年齢/髪/服装の具体は [fixed]。"
+
+    # 3. scene — 自然言語の描写文
+    scene:
+      en: "Inside the same dim herb-scented cottage. In the foreground, H cups the small gray inscribed stone and holds a single, tiny, almost-spent pale-blue flame conjured at his fingertip just above it — the one cold point of light in the room. His face shows quiet dread; he is the one who knows. Behind him, across the rising steam of the hearth where she had gone to draw hot water, the woman is just beginning to turn back toward him, her earlier easy warmth hardening into a careful, watchful, verifying look as her eyes find the blue glow — she is the one about to know. The gap between the knower and the not-yet-knower is the whole subject: he has gained a fragment and, in the same instant, lost the version of himself that stayed unseen."
+      ja: "同じ薄暗い薬草の小屋の中。前景で H が灰色の刻印石を手に包み、そのすぐ上の指先に、消えかけの極小の青白い灯火をひとつ灯している——室内で唯一の冷たい光点。H の顔には静かな怖れ。彼が『知る者』だ。その背後、湯を汲みに立った竈の湯気の向こうで、女がちょうど振り返りかけている。玩具の石だと笑っていた気さくな温かさが、青い光を目に捉えた瞬間、用心深く確かめる目へと硬くなっていく——彼女が『これから知る者』だ。知る者と、まだ知らぬ者との差＝この絵の主題そのもの：H は断片を得たその同じ瞬間に、知られずにいられた自分を失う。"
+
+    # 4. composition — 基準画像に近いフレーミング＋ I-D7 を構図化
+    composition:
+      en: "Keep the framing close to the reference base image (Scene 2): same cottage interior, same H in the foreground at the same distance/lens, same low-key hearth key-light, so the character reads as identical. H is foreground-left (or foreground), his cupped hand and the single pale-blue flame the compositional focus and the only cold accent. The woman is placed in the mid-ground beyond him, partly veiled by hearth steam, caught mid-turn (over-the-shoulder / three-quarter back-to-front), her gaze-line traveling to the blue point — this spatial separation (foreground knower vs. steam-veiled woman turning) carries the information gap [I-D7]. Warm hearth glow fills the room; the blue accent is small and dying, not radiant."
+      ja: "基準画像（Scene2）に近いフレーミングを保つ：同じ小屋内部、同じ H を前景に、同じカメラ距離/レンズ、同じローキーの炉火のキーライト——キャラが同一と読めるように。H は前景（左寄りまたは中央前景）、手に包んだ石と唯一の青白い灯火が構図の焦点であり唯一の冷たい accent。女はその奥・中景、炉の湯気に半ば隠れ、振り返る途中（肩越し／四分の三の後ろ姿から前へ）で捉える。女の視線が青い光点へ向かう——この空間的な隔たり（前景の知る者 対 湯気に隠れ振り返る女）が情報格差を担う [I-D7]。室内は暖かい炉火の光に満ち、青い accent は小さく消えかけ、輝かせない。"
+
+    # 5. style — visual_bible.style（medium/tone/palette/lighting）※ここでは青白い accent を1点だけ使う
+    style:
+      medium:
+        en: "anime / manga-style illustration, clean line art with cel and soft shading, painterly muted backgrounds"
+        ja: "アニメ・漫画調イラスト、クリーンな線画＋セル塗り/やわらかい陰影、絵画的で彩度を抑えた背景"
+      tone:
+        en: "dark fantasy, quiet, austere, restrained; melancholy and isolation; the loneliness of one who knows too much"
+        ja: "ダークファンタジー、静か、質素、抑制的。憂いと孤立。知りすぎた者の孤独"
+      palette:
+        en: "desaturated earth tones (bark, ash, wool, clay), deep shadow; a SINGLE cold pale-blue accent for the conjured light — small and almost spent, not glamorous"
+        ja: "彩度を落とした土色（樹皮・灰・羊毛・粘土）と濃い影。魔法の灯だけ冷たい青白い一点を accent に——小さく消えかけ、華やかにしない"
+      lighting:
+        en: "low-key chiaroscuro, hearth-fire warm key with a small cold pale-blue point at H's fingertip, dim interior, soft grain, hearth steam; never bright or cheerful"
+        ja: "ローキーの明暗、暖色の炉火をキーに、H の指先に小さく冷たい青白い点。薄暗い室内、やわらかな粒状感、炉の湯気。明るく陽気にしない"
+
+    # 6. negative — visual_bible.style.forbidden をそのまま（青い光はここでは許容＝1点のみ）
+    negative:
+      en:
+        - "no status UI, HP/MP bars, level numbers, floating stats, or game HUD (status is invisible to locals; it is a curse, not a display) [I-4]"
+        - "no modern clothing, gadgets, or Japanese contemporary items on anyone [I-5]"
+        - "no bright, saturated, or cheerful palette; no clean fantasy-hero glamour"
+        - "no flashy reality-breaking miracles; the conjured flame stays tiny and costly, not a radiant magical blast [I-1]"
+        - "no on-image proper names, captions, or watermarks (roles only: H, the woman)"
+        - "the pale-blue light must stay a single small dying point, not a large glow lighting the whole room [scene-specific]"
+      ja:
+        - "ステータス UI・HP/MP バー・レベル数値・浮遊ステータス・ゲーム風 HUD を描かない [I-4]"
+        - "現代の衣服・機器・現代日本の小物を誰にも持たせない [I-5]"
+        - "明るい/高彩度/陽気なパレット、清潔な英雄的華やかさにしない"
+        - "派手な理破りの奇跡を描かない。灯火は極小で代償的に——輝く魔法の爆発にしない [I-1]"
+        - "画面内に固有名詞・キャプション・透かしを入れない（役割のみ: H / 女）"
+        - "青白い光は小さく消えかけの一点にとどめ、部屋全体を照らす大きな輝きにしない [シーン固有]"
+
+    # 7. reference_note
+    reference_note:
+      en: "Attach the generated Scene-2 base image of H as the reference image (this scene is the same beat as the base, so keep H maximally identical). Match face, hair, build, tunic and hearth key-light; the woman turning in the steam and the single blue fingertip point are the intended differences that carry the exposure and the information gap [I-D7]."
+      ja: "生成済みの H の基準画像（Scene2）を参照画像として添付する（本シーンは基準画像と同じ場面なので H は最大限そろえる）。顔・髪・体格・チュニック・炉火のキーライトを一致させ、湯気の中で振り返る女と指先の青い一点だけを意図的な差分＝露見と情報格差の担い手にする [I-D7]。"
+
+# 参照
+references:
+  - meta/visual_bible.yaml   # 記述子の固定源（subject/secondary/style/negative の出所）
+  - story/playtest-01-s1-rev.md            # Scene1（石を渡される）
+  - story/playtest-01-s2-d4-success_with_cost.md  # Scene2（露見・canonical・基準画像）
+  - meta/play_log.yaml       # turn:1 success_with_cost の consequence（I-D5）
+  - specs/core/drama_invariants.md         # I-D5（得た＝失った）, I-D7（情報格差）
+  - specs/core/invariants.md               # I-1（理不可侵）, I-4（数値不可視）, I-5（区別不能）

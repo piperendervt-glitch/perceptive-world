@@ -68,11 +68,14 @@ characters:
     role:
       en: "protagonist, a reincarnator (modern-Japan office worker in his past life); outwardly indistinguishable from a local [canon: characters.md, I-5]"
       ja: "主人公。転生者（前世は現代日本の社会人）。外見は現地人と区別できない [canon: characters.md, I-5]"
-    provenance_note: "性別=男性・髪/瞳/服装の具体は [fixed]（canon 未指定）。転生者・負傷・Lv1 一般人体格・毛布は [canon]。"
+    provenance_note: "性別=男性・髪/瞳/服装の具体は [fixed]（canon 未指定）。転生者・負傷・Lv1 一般人体格・毛布は [canon]。年齢=20代半ば・包帯範囲・default 表情=無表情 はキャラシート生成の揺れを潰すための精密化 [fixed]。"
     descriptors:
       age:
-        en: "adult man, late 20s to mid 30s"          # [fixed] 社会人=成人 / 性別ユーザ確定
-        ja: "成人男性、20代後半〜30代半ば"
+        en: "adult man in his mid-20s (a young adult, NOT a boy or adolescent)"   # [fixed] 少年的に描かれる揺れを固定
+        ja: "20代半ばの成人男性（若い成人。少年・思春期には描かない）"
+      expression:
+        en: "neutral, expressionless by default on the character sheet (a scene may override it)"  # [fixed] キャラシート用の既定表情
+        ja: "キャラシート用のデフォルトは無表情（シーン側で上書きしてよい）"
       hair:
         en: "short, slightly unkempt dark (black-brown) hair"   # [fixed] 現地人に紛れる地味さ
         ja: "短めで少し乱れた暗色（黒〜焦げ茶）の髪"
@@ -89,14 +92,31 @@ characters:
         en: "plain local period garb: a rough undyed tunic and worn woolen layers in muted earth tones, a travel-worn cloak; humble peasant footwear; absolutely no modern items [I-5]"
         ja: "現地の時代衣装：粗い生成りのチュニックと擦り切れた羊毛の重ね着、土色の外套、質素な農民の履物。現代の小物は一切なし [I-5]"
       distinctive:
-        en: "a bandaged wound (monster-claw injury), a coarse wool blanket over his knees when resting; sometimes cupping a small gray inscribed stone; a single pale-blue flame conjured at his fingertip"
-        ja: "包帯を巻いた傷（魔物の爪の傷）、休むとき膝に粗い羊毛の毛布。時に灰色の刻印石を手のひらに包む。指先に灯す青白い小さな灯火"
+        en: "a bandaged wound (monster-claw injury) wrapping the RIGHT hand — from the back of the right hand up to the mid-forearm (fixed extent); a coarse wool blanket over his knees when resting; sometimes cupping a small gray inscribed stone; a single pale-blue flame conjured at his fingertip"
+        ja: "包帯を巻いた傷（魔物の爪の傷）＝右手を覆う。範囲は右手の甲から前腕中ほどまで（固定）。休むとき膝に粗い羊毛の毛布。時に灰色の刻印石を手のひらに包む。指先に灯す青白い小さな灯火"
       current_state:
         en: "recovering from injury in the herb-scented cottage; guarded, inward"
         ja: "薬草の小屋で負傷から回復中。警戒的で内向き"
     prompt_descriptor:
-      en: "H — adult man late 20s–30s, short slightly unkempt dark hair, quiet watchful tired dark eyes carrying hidden knowledge, ordinary average build, plain rough undyed tunic and worn muted-earth woolen layers with a travel-worn cloak, humble peasant footwear, a bandaged wound; anime/manga illustration, dark fantasy, quiet and austere, desaturated earth tones, low-key hearth lighting; no modern items, no status UI or numbers"
-      ja: "H — 成人男性20代後半〜30代、短めで少し乱れた暗色の髪、静かでよく見る疲れた暗色の目（隠した知識を宿す）、一般人並みの中背体格、粗い生成りのチュニックと土色の羊毛の重ね着＋擦り切れた外套、質素な農民の履物、包帯の傷。アニメ・漫画調、ダークファンタジー、静かで質素、彩度を抑えた土色、ローキーの炉火の灯り。現代の小物なし、ステータス UI・数値なし"
+      en: "H — adult man in his mid-20s (a young adult, not a boy or adolescent), short slightly unkempt dark hair, quiet watchful tired dark eyes carrying hidden knowledge, neutral expressionless face by default, ordinary average build, plain rough undyed tunic and worn muted-earth woolen layers with a travel-worn cloak, humble peasant footwear, a bandage wrapping his right hand from the back of the hand up to the mid-forearm; anime/manga illustration, dark fantasy, quiet and austere, desaturated earth tones, low-key hearth lighting; no modern items, no status UI or numbers"
+      ja: "H — 20代半ばの成人男性（若い成人。少年・思春期には描かない）、短めで少し乱れた暗色の髪、静かでよく見る疲れた暗色の目（隠した知識を宿す）、デフォルトは無表情、一般人並みの中背体格、粗い生成りのチュニックと土色の羊毛の重ね着＋擦り切れた外套、質素な農民の履物、右手の甲から前腕中ほどまで巻いた包帯。アニメ・漫画調、ダークファンタジー、静かで質素、彩度を抑えた土色、ローキーの炉火の灯り。現代の小物なし、ステータス UI・数値なし"
+    # キャラシート採用アセット（生成で判明した揺れを潰した基準画像・一貫性の anchor）
+    reference_sheet:
+      - file: image/IMG_4539.JPG
+        use:
+          en: "bust-up, three-quarter front view — face/hair/eyes reference (neutral expression)"
+          ja: "バストアップ・3/4正面——顔/髪/目の基準（無表情）"
+      - file: image/IMG_4540.JPG
+        use:
+          en: "profile (side) view — head/nose/hair silhouette reference (neutral expression)"
+          ja: "横顔（側面）——頭部/鼻/髪のシルエット基準（無表情）"
+      - file: image/IMG_4542.JPG
+        use:
+          en: "full-body front view — build/proportions/clothing/bandage-extent reference (neutral expression)"
+          ja: "全身正面——体格/プロポーション/衣装/包帯範囲の基準（無表情）"
+    # 採用シード（画像生成の再現用）。リポジトリ内にメタデータが無く未記録。判明したら埋める。
+    seed: null   # 未記録（不明）。捏造しない。
+
 
   woman:
     role:
