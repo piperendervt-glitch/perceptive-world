@@ -5,6 +5,10 @@
 __pycache__/
 *.pyc
 
+# TRPG engine runtime output (session logs / saves). Regenerated on run;
+# the *fixture* under tests/fixtures/ is the versioned truth, not these.
+trpg_core/logs/
+
 # Phase 0 QA gate test — throwaway, superseded by qa_deterministic.py.
 # Kept on disk for reference (rerun with different models / prompts) but
 # not part of the versioned tree.
