@@ -41,3 +41,9 @@ def make_enemy(key: str) -> Enemy:
 
 def make_group(keys: list[str]) -> list[Enemy]:
     return [make_enemy(k) for k in keys]
+
+
+def enemy_name(key: str) -> str:
+    """key → 表示名（コンソール描写用）。未知キーはそのまま返す。"""
+    tpl = _TEMPLATES.get(key)
+    return tpl[0] if tpl else key

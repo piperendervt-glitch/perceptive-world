@@ -94,12 +94,29 @@ class GameState:
         self.started = False
         self.respawn_on_defeat = False
         self.log: list[dict] = []
+        # 表示専用フック（対話プレイでのみ設定）。**ログには一切影響しない**——
+        # scripted/policy では None のままなので回帰ログはバイト単位で不変（seed=7 保証）。
+        self.presenter = None
 
     def emit(self, **fields) -> dict:
         entry = {"t": self.turn}
         entry.update(fields)
         self.log.append(entry)
+        if self.presenter is not None:
+            self.presenter(entry)   # 表示のみ。乱数もログも触らない。
         return entry
+
+    def reset_for_village(self) -> None:
+        """敗北後の再起（Fix3）: HP/MP を全快し、授かり・薬草をリセットする。
+        探索フェーズをやり直すため、一度きりの探索ボーナスも白紙に戻す。
+        seed/rng/turn/log/hp_max などの進行・再現要素は保持する。"""
+        self.hp = self.hp_max
+        self.mp = self.mp_max
+        self.elder = False
+        self.blessing = False
+        self.dagger = False
+        self.scout = False
+        self.herbs = 0
 
     # --- save/load（★rng の内部状態 a を含む＝ロード後の乱数列が一致する） ---
     _SNAP_FIELDS = (
@@ -247,10 +264,15 @@ def run_session(state: GameState, controller) -> str:
                 state.node = "forest"
             else:  # defeat
                 if state.respawn_on_defeat:
-                    state.hp = max(1, state.hp_max // 2)
-                    state.mp = state.mp_max
-                    state.emit(type="enter_node", node="defeat")
+                    # 崩れ落ちる描写は combat の defeat イベントで presenter が出す。
+                    # Fix3: HP 半分では詰みうるので全快とし、村の探索フェーズからやり直す。
+                    # ペナルティは「探索をやり直す手間」と「一度負けた」事実に留める（死なない設計）。
+                    state.reset_for_village()
                     state.emit(type="respawn", hp=state.hp, mp=state.mp)
+                    from . import village
+                    for k in controller.explores():   # 探索を 3 つ選び直す
+                        village.explore(state, k)
+                    state.turn += 1
                     state.emit(type="enter_node", node="forest")
                     state.node = "forest"
                 else:
@@ -301,6 +323,100 @@ class ConsoleController:
     def __init__(self, state: GameState, save_dir: str):
         self.state = state
         self.save_dir = save_dir
+        # 判定結果・敵ターン・敗北描写を「起きた順」に画面へ出す（表示専用フック）。
+        state.presenter = self.present_event
+
+    # --- 探索フェーズ（対話・敗北後もここに戻る＝Fix3） ---
+    def explores(self):
+        print()
+        print("  ── 村 —— 森へ発つ前に、3 つ支度する（5 つから選ぶ）──")
+        return list_explore_and_pick(self)
+
+    # --- 判定・戦闘の結果表示（Fix1）／敗北描写（Fix2） ---
+    #     ここは state.log から読む「表示層」。ログ・乱数・判定には一切触れない。
+    def present_event(self, ev: dict) -> None:
+        t = ev.get("type")
+        if t == "encounter":
+            self._show_encounter(ev)
+        elif t == "check":
+            self._show_check(ev)
+        elif t == "mp_cost":
+            print(f"     魔力を {ev['cost']} 消費（残 MP {ev['mp']}）")
+        elif t == "player_attack":
+            self._show_player_attack(ev)
+        elif t == "enemy_attack":
+            self._show_enemy_attack(ev)
+        elif t == "herb":
+            print(f"     薬草を噛む —— HP+{ev['heal']}（HP {ev['hp']}／残 薬草 {ev['herbs']}）")
+        elif t == "combat_win":
+            print("     ——敵を退けた。")
+        elif t == "defeat":
+            print()
+            print("  H は膝から崩れ落ちた。意識が遠のく——")
+        elif t == "respawn":
+            print()
+            print("  気がつくと、村の広場に寝かされていた。誰かが運んでくれたらしい。")
+            print("  傷は洗われ、息は整っている。だが、支度は最初からやり直しだ。")
+            print("  ——まだ、終わってはいない。もう一度、森へ。")
+
+    def _show_encounter(self, ev):
+        from .enemies import enemy_name
+        print()
+        txt = node_text(ev["node"])
+        if txt:
+            print(f"  {txt}")
+        names = "／".join(enemy_name(k) for k in ev["enemies"])
+        print(f"  ▼ 戦闘 —— {names}")
+
+    def _show_check(self, ev):
+        tag = ev.get("tag")
+        label = {
+            "sneak": "藪を抜ける〔vit〕",
+            "vit_check": "松明を消して忍ぶ〔vit〕",
+            "flee": "離脱をはかる〔vit〕",
+            "free_hit": "偵察の一手",
+            "attack_attack": "H の斬撃〔str〕",
+            "magic_attack": "H の呪〔mag〕",
+        }.get(tag, tag or "判定")
+        # 成否の語を判定種別に合わせる
+        if tag in ("attack_attack", "magic_attack", "free_hit"):
+            ok, ng = "命中", "外れ"
+        elif tag == "flee":
+            ok, ng = "振り切った", "逃げ損ねた"
+        else:
+            ok, ng = "成功", "失敗"
+        if ev.get("auto"):
+            print(f"     {label} —— {ok}（自動）")
+            return
+        dice = ev["dice"]
+        mod = ev["modifier"]
+        sign = f"+{mod}" if mod >= 0 else str(mod)
+        if ev.get("crit"):
+            result = "会心（6ゾロ・自動成功）"
+        elif ev.get("fumble"):
+            result = "大失敗（1ゾロ・自動失敗）"
+        else:
+            result = ok if ev["success"] else ng
+        print(f"     {label}: 2D6[{dice[0]},{dice[1]}]={ev['sum']} {sign} "
+              f"→ {ev['total']} vs 目標{ev['target']} → {result}")
+
+    def _show_player_attack(self, ev):
+        from .enemies import enemy_name
+        if ev.get("damage", 0) > 0:
+            crit = "（会心！）" if ev.get("crit") else ""
+            print(f"     → {enemy_name(ev['target'])} に {ev['damage']} ダメージ{crit}"
+                  f"（残 HP {ev['enemy_hp']}）")
+        # 外れは check 行が「外れ」と出しているので、ここでは重ねない。
+
+    def _show_enemy_attack(self, ev):
+        from .enemies import enemy_name
+        d = ev["dice"]
+        name = enemy_name(ev["enemy"])
+        if ev["hit"]:
+            print(f"     {name} の攻撃 [{d[0]},{d[1]}]={ev['total']} "
+                  f"→ {ev['damage']} ダメージを受けた（HP {ev['player_hp']}）")
+        else:
+            print(f"     {name} の攻撃 [{d[0]},{d[1]}]={ev['total']} → かわした")
 
     # --- 内心表示（I-4: H にだけ見えているもの） ---
     def _show_status(self):
@@ -411,15 +527,12 @@ def play_interactive(seed: int):
     state = GameState(seed)
     state.respawn_on_defeat = True
     save_dir = os.path.join(LOG_DIR, "saves")
-    controller = ConsoleController(state, save_dir)
+    controller = ConsoleController(state, save_dir)  # ← ここで presenter を装着
     print("=" * 60)
     print(f"  Ordia — 決定論 TRPG（seed={seed}・LLM 不使用）")
     print("=" * 60)
-    print("村で 3 つ探索する（5 つから）。番号で選ぶ。")
-    keys = list_explore_and_pick(controller)
-    controller_scripted_explores = keys
-    # 探索をコントローラに渡すためのラッパ
-    controller.explores = lambda: controller_scripted_explores  # type: ignore
+    # 探索フェーズは run_session が controller.explores() を呼んで進める
+    # （敗北後もそこへ戻る＝Fix3）。番号で選ぶ。
     result = run_session(state, controller)
     print()
     print(node_text("win" if result == "clear" else "defeat"))
