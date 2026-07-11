@@ -1,0 +1,145 @@
+# beasts.yaml — シナリオ「森の獣狩り」（カテゴリA：戦闘重心）
+#
+# goblin の対極。戦闘が連続する（4 戦）。探索は「槍を研ぐ(damage_bonus)」「傷薬(item)」
+# 中心。既存 effect タイプ（hit_bonus/damage_bonus/item/recon）だけで組む＝エンジン無改変。
+# LLM-GM の描写テスト観点: 戦闘の連続をどう描き分けるか（単調にならないか）。
+# ※市販の数表・固有名詞はコピーしない。数値は自前。Ordia の世界観（理・血統魔法・
+#   転生者の情報格差 I-4）に沿う固定テキスト。
+
+meta:
+  id: beasts
+  title: "森の獣狩り"
+  intro: "森の獣が数を増し、村の家畜と子らを襲い始めた。親玉を狩ってくれ——H は槍と杖を負い、獣道へ分け入る。"
+
+character:
+  hp: 20
+  mp: 10
+  attributes: {str: 8, mag: 8, vit: 9}
+
+village:                      # 出立前の支度（狩人の庭で 3 つ整える）
+  pick_count: 3
+  options:
+    - key: hunter
+      name: "老猟師に獣の癖を聞く"
+      gain: "親玉（大猪王）への命中 +2"
+      text: "老猟師は炉端で牙の痕をなぞる。「大猪王は右へ振る。左後ろへ回れ」——H の内心に、親玉への一手が刻まれる。"
+      effect: {type: hit_bonus, target_enemy: boar, value: 2}
+    - key: whet
+      name: "獣狩りの槍を研ぐ"
+      gain: "物理ダメージ +2"
+      text: "砥石に槍を滑らせる。刃は薄く鳴り、獣の毛皮を裂くだけの鋭さを取り戻す。"
+      effect: {type: damage_bonus, kind: physical, value: 2}
+    - key: balm
+      name: "血止めの傷薬を煮る"
+      gain: "傷薬 ×2（戦闘中に使用）"
+      text: "鍋の底で草の脂が泡立つ。二包み――「深手を負ったら塗り込め。獣に嗅がれる前に」。"
+      effect: {type: item, item: herb, count: 2}
+    - key: hound
+      name: "猟犬を借りる"
+      gain: "獣の不意を突く（初撃必中）/ 沢の徒渉を自動成功"
+      text: "猟犬が H の脛に鼻を寄せる。犬は獣の通り道と間合いを教える――最初の一撃は、外さない。"
+      effect: {type: recon}
+    - key: ward
+      name: "焚火の灰でお守りを結ぶ"
+      gain: "全命中判定 +1"
+      text: "焚火跡の灰を麻に包み、首にかける。獣の気に呑まれかけたとき、狙いがわずかにぶれにくくなる。"
+      effect: {type: hit_bonus, value: 1}
+
+enemies:                      # 森の獣（素早く脆い雑魚＋手強い親玉）。goblin とは別物
+  weasel: {name: "疾風鼬", hp: 3,  atk: 1, dmg: [1, 2], target: 5}
+  wolf:   {name: "灰狼",   hp: 5,  atk: 1, dmg: [1, 3], target: 6}
+  boar:   {name: "大猪王", hp: 18, atk: 2, dmg: [2, 5], target: 8}
+
+map:                          # 狩人の庭を拠点に支度して回る
+  start: yard
+  locations:
+    yard:      {name: "狩人の庭",       exits: {north: hunterhut, east: whetstone, south: wardstone, west: kennel}}
+    hunterhut: {name: "老猟師の小屋",   exits: {south: yard, north: balmhut}, action: hunter}
+    balmhut:   {name: "薬煮の竈",       exits: {south: hunterhut},            action: balm}
+    whetstone: {name: "研ぎ場",         exits: {west: yard},                  action: whet}
+    wardstone: {name: "焚火跡",         exits: {north: yard},                 action: ward}
+    kennel:    {name: "犬小屋",         exits: {east: yard, west: gate},      action: hound}
+    gate:      {name: "獣道の入口（森へ）", exits: {east: kennel}, leads_to_adventure: true}
+
+start_node: edge
+
+nodes:
+  edge:
+    title: "獣道の入口"
+    text:
+      - "獣道は二手に割れる。踏み荒らされた本道と、沢を渡って塒へ回り込む間道。親玉——大猪王は、この森の奥にいるという。"
+    choices:
+      - {key: press, label: "本道をまっすぐ追う", next: hollow}
+      - key: flank
+        label: "沢を渡って回り込む【vit 判定 / 目標 8】"
+        check: {stat: vit, target: 8, tag: ford, recon_auto: true}
+        on_success: ridge_hollow
+        on_failure: hollow
+
+  hollow:
+    title: "窪地"
+    text:
+      - "窪地に踏み込むと、疾風鼬が二匹、牙を鳴らして飛びかかってきた。素早いが、脆い。"
+    encounter: [weasel, weasel]
+    recon_free_first: true
+    on_win: glade
+
+  ridge_hollow:
+    title: "沢向こうの窪地"
+    text:
+      - "沢を渡り、獣の背後へ出た。気配に気づいた疾風鼬が一匹、跳ねる。"
+    encounter: [weasel]
+    recon_free_first: true
+    on_win: glade
+
+  glade:
+    title: "獣の広場"
+    text:
+      - "開けた草地に、灰狼が二頭。群れの中核だ。低く唸り、間合いを測ってくる。"
+    encounter: [wolf, wolf]
+    on_win: thicket_choice
+
+  thicket_choice:
+    title: "藪の分かれ"
+    text:
+      - "血の匂いが濃くなる。親玉の塒は藪の向こう。まっすぐ踏み込むか、囮を置いて誘い出すか。"
+    choices:
+      - {key: charge, label: "藪へまっすぐ踏み込む", next: thicket}
+      - key: bait
+        label: "囮を置いて誘い出す【vit 判定 / 目標 8】"
+        check: {stat: vit, target: 8, tag: bait, recon_bonus: 2}
+        on_success: ambush
+        on_failure: thicket
+
+  thicket:
+    title: "血の藪"
+    text:
+      - "藪を割ると、灰狼が二頭と疾風鼬が一匹、いっせいに牙を剥いた。"
+    encounter: [wolf, wolf, weasel]
+    on_win: den
+
+  ambush:
+    title: "誘い出し"
+    text:
+      - "囮に釣られ、灰狼が一頭だけ藪から飛び出した。残りは親玉の傍を離れない。好機だ。"
+    encounter: [wolf]
+    on_win: den
+
+  den:
+    title: "大猪王の塒"
+    text:
+      - "泥と骨の匂いが満ちる塒。大猪王が地を蹴って立ち上がり、傍らの灰狼が牙を剥く。老猟師の言葉が過ぎる——「あれは右へ振る。左後ろへ回れ」。"
+    encounter: [boar, wolf]
+    on_win: cleared
+
+  cleared:
+    title: "獣狩りの終わり"
+    text:
+      - "大猪王は泥に沈み、森に鳥の声が戻った。H は獣道を抜け、村の灯へ帰る。掌に残る数値の余韻だけが、この狩りを覚えている。"
+    ending: clear
+
+  defeat:
+    title: "狩人の庭で目覚め"
+    text:
+      - "気づくと狩人の庭に寝かされていた。猟犬が H の頬を舐めている。傷は洗われ、息は整う。まだ、獣は森にいる。"
+    on_defeat_return: village

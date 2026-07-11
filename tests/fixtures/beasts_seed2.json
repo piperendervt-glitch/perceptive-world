@@ -1,0 +1,869 @@
+{
+ "scenario": "beasts",
+ "seed": 2,
+ "inputs": [
+  "explore:hunter",
+  "explore:whet",
+  "explore:balm",
+  "choice:本道をまっすぐ追う",
+  "combat:magic",
+  "combat:magic",
+  "combat:magic",
+  "combat:magic",
+  "combat:magic",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack",
+  "choice:藪へまっすぐ踏み込む",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack",
+  "combat:herb",
+  "combat:attack",
+  "combat:attack",
+  "combat:herb",
+  "combat:attack",
+  "combat:attack"
+ ],
+ "expected_log": [
+  {
+   "t": 0,
+   "type": "session_start",
+   "seed": 2
+  },
+  {
+   "t": 0,
+   "type": "explore",
+   "place": "hunter",
+   "gain": "親玉（大猪王）への命中 +2"
+  },
+  {
+   "t": 0,
+   "type": "explore",
+   "place": "whet",
+   "gain": "物理ダメージ +2"
+  },
+  {
+   "t": 0,
+   "type": "explore",
+   "place": "balm",
+   "gain": "傷薬 ×2（戦闘中に使用）"
+  },
+  {
+   "t": 1,
+   "type": "enter_node",
+   "node": "edge"
+  },
+  {
+   "t": 2,
+   "type": "choice",
+   "node": "edge",
+   "label": "本道をまっすぐ追う"
+  },
+  {
+   "t": 2,
+   "type": "enter_node",
+   "node": "hollow"
+  },
+  {
+   "t": 2,
+   "type": "encounter",
+   "node": "hollow",
+   "enemies": [
+    "weasel",
+    "weasel"
+   ]
+  },
+  {
+   "t": 3,
+   "type": "mp_cost",
+   "cost": 2,
+   "mp": 8,
+   "cause": "魔法発動 (I-2)"
+  },
+  {
+   "t": 3,
+   "type": "check",
+   "tag": "magic_attack",
+   "dice": [
+    4,
+    6
+   ],
+   "sum": 10,
+   "modifier": 0,
+   "total": 10,
+   "target": 5,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 3,
+   "type": "player_attack",
+   "kind": "magic",
+   "target": "weasel",
+   "damage": 7,
+   "crit": false,
+   "enemy_hp": 0
+  },
+  {
+   "t": 3,
+   "type": "enemy_attack",
+   "enemy": "weasel",
+   "dice": [
+    3,
+    3
+   ],
+   "total": 7,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 20
+  },
+  {
+   "t": 5,
+   "type": "mp_cost",
+   "cost": 2,
+   "mp": 6,
+   "cause": "魔法発動 (I-2)"
+  },
+  {
+   "t": 5,
+   "type": "check",
+   "tag": "magic_attack",
+   "dice": [
+    5,
+    1
+   ],
+   "sum": 6,
+   "modifier": 0,
+   "total": 6,
+   "target": 5,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 5,
+   "type": "player_attack",
+   "kind": "magic",
+   "target": "weasel",
+   "damage": 8,
+   "crit": false,
+   "enemy_hp": 0
+  },
+  {
+   "t": 5,
+   "type": "combat_win",
+   "node": "hollow"
+  },
+  {
+   "t": 5,
+   "type": "enter_node",
+   "node": "glade"
+  },
+  {
+   "t": 5,
+   "type": "encounter",
+   "node": "glade",
+   "enemies": [
+    "wolf",
+    "wolf"
+   ]
+  },
+  {
+   "t": 6,
+   "type": "mp_cost",
+   "cost": 2,
+   "mp": 4,
+   "cause": "魔法発動 (I-2)"
+  },
+  {
+   "t": 6,
+   "type": "check",
+   "tag": "magic_attack",
+   "dice": [
+    2,
+    3
+   ],
+   "sum": 5,
+   "modifier": 0,
+   "total": 5,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": false
+  },
+  {
+   "t": 6,
+   "type": "player_attack",
+   "kind": "magic",
+   "target": "wolf",
+   "damage": 0,
+   "fumble": false
+  },
+  {
+   "t": 6,
+   "type": "enemy_attack",
+   "enemy": "wolf",
+   "dice": [
+    6,
+    4
+   ],
+   "total": 11,
+   "hit": true,
+   "damage": 1,
+   "player_hp": 19
+  },
+  {
+   "t": 6,
+   "type": "enemy_attack",
+   "enemy": "wolf",
+   "dice": [
+    5,
+    3
+   ],
+   "total": 9,
+   "hit": true,
+   "damage": 3,
+   "player_hp": 16
+  },
+  {
+   "t": 7,
+   "type": "mp_cost",
+   "cost": 2,
+   "mp": 2,
+   "cause": "魔法発動 (I-2)"
+  },
+  {
+   "t": 7,
+   "type": "check",
+   "tag": "magic_attack",
+   "dice": [
+    1,
+    6
+   ],
+   "sum": 7,
+   "modifier": 0,
+   "total": 7,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 7,
+   "type": "player_attack",
+   "kind": "magic",
+   "target": "wolf",
+   "damage": 4,
+   "crit": false,
+   "enemy_hp": 1
+  },
+  {
+   "t": 7,
+   "type": "enemy_attack",
+   "enemy": "wolf",
+   "dice": [
+    1,
+    2
+   ],
+   "total": 4,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 16
+  },
+  {
+   "t": 7,
+   "type": "enemy_attack",
+   "enemy": "wolf",
+   "dice": [
+    1,
+    6
+   ],
+   "total": 8,
+   "hit": true,
+   "damage": 2,
+   "player_hp": 14
+  },
+  {
+   "t": 8,
+   "type": "mp_cost",
+   "cost": 2,
+   "mp": 0,
+   "cause": "魔法発動 (I-2)"
+  },
+  {
+   "t": 8,
+   "type": "check",
+   "tag": "magic_attack",
+   "dice": [
+    4,
+    6
+   ],
+   "sum": 10,
+   "modifier": 0,
+   "total": 10,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 8,
+   "type": "player_attack",
+   "kind": "magic",
+   "target": "wolf",
+   "damage": 5,
+   "crit": false,
+   "enemy_hp": 0
+  },
+  {
+   "t": 8,
+   "type": "enemy_attack",
+   "enemy": "wolf",
+   "dice": [
+    3,
+    3
+   ],
+   "total": 7,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 14
+  },
+  {
+   "t": 9,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    1,
+    4
+   ],
+   "sum": 5,
+   "modifier": 0,
+   "total": 5,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": false
+  },
+  {
+   "t": 9,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "wolf",
+   "damage": 0,
+   "fumble": false
+  },
+  {
+   "t": 9,
+   "type": "enemy_attack",
+   "enemy": "wolf",
+   "dice": [
+    1,
+    1
+   ],
+   "total": 3,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 14
+  },
+  {
+   "t": 10,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    6,
+    5
+   ],
+   "sum": 11,
+   "modifier": 0,
+   "total": 11,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 10,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "wolf",
+   "damage": 3,
+   "crit": false,
+   "enemy_hp": 2
+  },
+  {
+   "t": 10,
+   "type": "enemy_attack",
+   "enemy": "wolf",
+   "dice": [
+    6,
+    1
+   ],
+   "total": 8,
+   "hit": true,
+   "damage": 3,
+   "player_hp": 11
+  },
+  {
+   "t": 12,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    4,
+    2
+   ],
+   "sum": 6,
+   "modifier": 0,
+   "total": 6,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 12,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "wolf",
+   "damage": 7,
+   "crit": false,
+   "enemy_hp": 0
+  },
+  {
+   "t": 12,
+   "type": "combat_win",
+   "node": "glade"
+  },
+  {
+   "t": 12,
+   "type": "enter_node",
+   "node": "thicket_choice"
+  },
+  {
+   "t": 13,
+   "type": "choice",
+   "node": "thicket_choice",
+   "label": "藪へまっすぐ踏み込む"
+  },
+  {
+   "t": 13,
+   "type": "enter_node",
+   "node": "thicket"
+  },
+  {
+   "t": 13,
+   "type": "encounter",
+   "node": "thicket",
+   "enemies": [
+    "wolf",
+    "wolf",
+    "weasel"
+   ]
+  },
+  {
+   "t": 14,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    1,
+    5
+   ],
+   "sum": 6,
+   "modifier": 0,
+   "total": 6,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 14,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "wolf",
+   "damage": 8,
+   "crit": false,
+   "enemy_hp": 0
+  },
+  {
+   "t": 14,
+   "type": "enemy_attack",
+   "enemy": "wolf",
+   "dice": [
+    5,
+    3
+   ],
+   "total": 9,
+   "hit": true,
+   "damage": 3,
+   "player_hp": 8
+  },
+  {
+   "t": 14,
+   "type": "enemy_attack",
+   "enemy": "weasel",
+   "dice": [
+    1,
+    5
+   ],
+   "total": 7,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 8
+  },
+  {
+   "t": 15,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    6,
+    6
+   ],
+   "sum": 12,
+   "modifier": 0,
+   "total": 12,
+   "target": 6,
+   "crit": true,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 15,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "wolf",
+   "damage": 12,
+   "crit": true,
+   "enemy_hp": 0
+  },
+  {
+   "t": 15,
+   "type": "enemy_attack",
+   "enemy": "weasel",
+   "dice": [
+    4,
+    1
+   ],
+   "total": 6,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 8
+  },
+  {
+   "t": 17,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    6,
+    6
+   ],
+   "sum": 12,
+   "modifier": 0,
+   "total": 12,
+   "target": 5,
+   "crit": true,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 17,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "weasel",
+   "damage": 12,
+   "crit": true,
+   "enemy_hp": 0
+  },
+  {
+   "t": 17,
+   "type": "combat_win",
+   "node": "thicket"
+  },
+  {
+   "t": 17,
+   "type": "enter_node",
+   "node": "den"
+  },
+  {
+   "t": 17,
+   "type": "encounter",
+   "node": "den",
+   "enemies": [
+    "boar",
+    "wolf"
+   ]
+  },
+  {
+   "t": 18,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    2,
+    6
+   ],
+   "sum": 8,
+   "modifier": 2,
+   "total": 10,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 18,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "boar",
+   "damage": 8,
+   "crit": false,
+   "enemy_hp": 10
+  },
+  {
+   "t": 18,
+   "type": "enemy_attack",
+   "enemy": "boar",
+   "dice": [
+    3,
+    3
+   ],
+   "total": 8,
+   "hit": true,
+   "damage": 2,
+   "player_hp": 6
+  },
+  {
+   "t": 18,
+   "type": "enemy_attack",
+   "enemy": "wolf",
+   "dice": [
+    6,
+    2
+   ],
+   "total": 9,
+   "hit": true,
+   "damage": 2,
+   "player_hp": 4
+  },
+  {
+   "t": 19,
+   "type": "herb",
+   "heal": 8,
+   "hp": 12,
+   "herbs": 1
+  },
+  {
+   "t": 19,
+   "type": "enemy_attack",
+   "enemy": "boar",
+   "dice": [
+    6,
+    6
+   ],
+   "total": 14,
+   "hit": true,
+   "damage": 3,
+   "player_hp": 9
+  },
+  {
+   "t": 19,
+   "type": "enemy_attack",
+   "enemy": "wolf",
+   "dice": [
+    2,
+    4
+   ],
+   "total": 7,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 9
+  },
+  {
+   "t": 20,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    4,
+    5
+   ],
+   "sum": 9,
+   "modifier": 2,
+   "total": 11,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 20,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "boar",
+   "damage": 8,
+   "crit": false,
+   "enemy_hp": 2
+  },
+  {
+   "t": 20,
+   "type": "enemy_attack",
+   "enemy": "boar",
+   "dice": [
+    2,
+    2
+   ],
+   "total": 6,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 9
+  },
+  {
+   "t": 20,
+   "type": "enemy_attack",
+   "enemy": "wolf",
+   "dice": [
+    3,
+    4
+   ],
+   "total": 8,
+   "hit": true,
+   "damage": 1,
+   "player_hp": 8
+  },
+  {
+   "t": 21,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    2,
+    5
+   ],
+   "sum": 7,
+   "modifier": 2,
+   "total": 9,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 21,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "boar",
+   "damage": 4,
+   "crit": false,
+   "enemy_hp": 0
+  },
+  {
+   "t": 21,
+   "type": "enemy_attack",
+   "enemy": "wolf",
+   "dice": [
+    5,
+    3
+   ],
+   "total": 9,
+   "hit": true,
+   "damage": 2,
+   "player_hp": 6
+  },
+  {
+   "t": 22,
+   "type": "herb",
+   "heal": 6,
+   "hp": 12,
+   "herbs": 0
+  },
+  {
+   "t": 22,
+   "type": "enemy_attack",
+   "enemy": "wolf",
+   "dice": [
+    6,
+    3
+   ],
+   "total": 10,
+   "hit": true,
+   "damage": 3,
+   "player_hp": 9
+  },
+  {
+   "t": 23,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    2,
+    1
+   ],
+   "sum": 3,
+   "modifier": 0,
+   "total": 3,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": false
+  },
+  {
+   "t": 23,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "wolf",
+   "damage": 0,
+   "fumble": false
+  },
+  {
+   "t": 23,
+   "type": "enemy_attack",
+   "enemy": "wolf",
+   "dice": [
+    5,
+    1
+   ],
+   "total": 7,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 9
+  },
+  {
+   "t": 25,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    5,
+    5
+   ],
+   "sum": 10,
+   "modifier": 0,
+   "total": 10,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 25,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "wolf",
+   "damage": 6,
+   "crit": false,
+   "enemy_hp": 0
+  },
+  {
+   "t": 25,
+   "type": "combat_win",
+   "node": "den"
+  },
+  {
+   "t": 25,
+   "type": "enter_node",
+   "node": "cleared"
+  },
+  {
+   "t": 25,
+   "type": "ending",
+   "result": "clear"
+  }
+ ]
+}
