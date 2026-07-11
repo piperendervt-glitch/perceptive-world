@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 
+from .map import GameMap
+
 
 _ID_SEPARATOR = ":"
 
@@ -85,6 +87,37 @@ def validate_world_object_specs(
             )
         seen.add(spec.object_id)
     return result
+
+
+def location_world_object_id(
+    scenario_id: str,
+    location_id: str,
+) -> WorldObjectId:
+    """map location IDをlocation名前空間の安定した世界対象IDへ変換する。"""
+
+    location = _require_exact_text(location_id, "location_id")
+    return WorldObjectId(
+        scenario_id=scenario_id,
+        local_id=f"location/{location}",
+    )
+
+
+def build_map_location_world_object_specs(
+    scenario_id: str,
+    game_map: GameMap,
+) -> tuple[WorldObjectSpec, ...]:
+    """GameMap内の全locationをID順で静的WorldObjectSpecへコピーする。"""
+
+    specs = (
+        WorldObjectSpec(
+            object_id=location_world_object_id(scenario_id, location_id),
+            kind="location",
+            label=game_map.locations[location_id].name,
+            scene_id=location_id,
+        )
+        for location_id in sorted(game_map.locations)
+    )
+    return validate_world_object_specs(specs)
 
 
 @dataclass(frozen=True)
