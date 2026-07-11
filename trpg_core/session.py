@@ -918,6 +918,10 @@ class ConsoleController:
             menu = self._combat_menu(state, enemies)
             self._show_combat_menu(state, enemies, menu)
             original, token = self._read_input_token()
+            if (isinstance(token, MetaRequest)
+                    and token.command == "load" and token.argument):
+                self._message("戦闘中のロードは非対応。安全な選択肢で load を。")
+                continue
             raw = self._command_from_token(token, menu, raw=original)
             raw = raw.lower() if raw is not None else ""
             if raw == "help":

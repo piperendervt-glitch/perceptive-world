@@ -149,6 +149,44 @@ def test_recording_receives_normalized_combat_command(monkeypatch):
     assert rec.inputs == ["combat:attack"]
 
 
+@pytest.mark.parametrize("load_command", ["load slot", "LOAD slot", "Load slot"])
+def test_combat_rejects_load_before_side_effects(
+        load_command, monkeypatch, capsys):
+    state, controller = _controller()
+    _node, enemies = _combat(state)
+    before = _fingerprint(state)
+    enemy_state = [(enemy.hp, enemy.alive) for enemy in enemies]
+    rec = RecordingController(controller, state.scenario)
+
+    def unexpected_load(_name):
+        pytest.fail("combat load must be rejected before _load()")
+
+    monkeypatch.setattr(controller, "_load", unexpected_load)
+    answers = iter([load_command, "attack"])
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
+
+    assert rec.combat_command(state, enemies) == "attack"
+    assert "戦闘中のロードは非対応。安全な選択肢で load を。" in capsys.readouterr().out
+    assert _fingerprint(state) == before
+    assert [(enemy.hp, enemy.alive) for enemy in enemies] == enemy_state
+    assert rec.inputs == ["combat:attack"]
+
+
+def test_argumentless_combat_load_keeps_existing_invalid_input_behavior(
+        monkeypatch, capsys):
+    state, controller = _controller()
+    _node, enemies = _combat(state)
+    before = _fingerprint(state)
+    answers = iter(["load", "attack"])
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
+
+    assert controller.combat_command(state, enemies) == "attack"
+    out = capsys.readouterr().out
+    assert "戦闘中のロードは非対応" not in out
+    assert "その選択は使用できません。" in out
+    assert _fingerprint(state) == before
+
+
 @pytest.mark.parametrize(
     ("scenario_id", "destination", "forbidden"),
     [
