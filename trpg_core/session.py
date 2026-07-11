@@ -41,6 +41,8 @@ _DIR_ALIAS = {
     "east": "east", "e": "east", "東": "east", "right": "east",
     "west": "west", "w": "west", "西": "west", "left": "west",
 }
+_DIR_ORDER = ("north", "east", "south", "west")
+_DIR_LABEL = {"north": "北", "east": "東", "south": "南", "west": "西"}
 
 
 # ---------------------------------------------------------------------------
@@ -324,6 +326,123 @@ class ConsoleController:
         # 判定結果・敵ターン・敗北描写を「起きた順」に画面へ出す（表示専用フック）。
         state.presenter = self.present_event
 
+    # --- 入力案内（表示専用。状態・ログ・乱数には触れない） ---
+    @staticmethod
+    def _show_compact_menu(place, situation, objective, menu):
+        print()
+        print("─" * 40)
+        print(f"{place}　{situation}")
+        print(f"目的: {objective}")
+        print()
+        for i, (label, _command, _detail) in enumerate(menu, 1):
+            print(f"{i}) {label}")
+        print()
+        print("[S] 状態  [H] ヘルプ  [Q] 終了")
+
+    @staticmethod
+    def _show_help(menu, include_load=True):
+        print()
+        print("── ヘルプ ──")
+        print("数字または [コマンド] を直接入力できる。")
+        for i, (label, command, detail) in enumerate(menu, 1):
+            print(f"  {i}) {label} — {detail} [{command}]")
+        print("  S / status — H の状態を表示")
+        print("  H / help   — このヘルプを表示")
+        print("  Q / quit   — ゲームを中断")
+        print("  save <名前> — 現在の状態を保存（例: save camp）")
+        if include_load:
+            print("  load <名前> — 保存した状態を読込（例: load camp）")
+        else:
+            print("  load は戦闘外で使用する。")
+        print("  地図では go <方角> または方角単独も使用できる。")
+
+    @staticmethod
+    def _menu_command(raw, menu):
+        if raw.isdigit() and 1 <= int(raw) <= len(menu):
+            return menu[int(raw) - 1][1]
+        return raw
+
+    @staticmethod
+    def _meta_shortcut(raw):
+        # 小文字 s は既存の south。メタ短縮は大文字だけを扱う。
+        return {"S": "status", "H": "help", "Q": "quit"}.get(raw, raw)
+
+    def _village_menu(self, gm, sc, picked):
+        loc = gm.here()
+        menu = []
+        if (loc.action and loc.action not in picked
+                and len(picked) < sc.village_pick_count):
+            opt = sc.village_option(loc.action)
+            menu.append((opt["name"], "do", "この場所で支度を行う"))
+        if loc.leads_to_adventure and len(picked) >= sc.village_pick_count:
+            menu.append(("森へ出立する", "depart", "村を出て冒険へ進む"))
+        exits = gm.exits()
+        for direction in _DIR_ORDER:
+            if direction in exits:
+                dest = gm.dest_name(direction)
+                menu.append((f"{_DIR_LABEL[direction]}へ → {dest}", f"go {direction}",
+                             f"{dest}へ移動する"))
+        menu.append(("周囲を見る", "look", "現在地と周囲の地図を表示する"))
+        return menu
+
+    def _show_village_menu(self, gm, sc, picked, menu):
+        remaining = sc.village_pick_count - len(picked)
+        objective = (f"支度をあと {remaining} つ整える" if remaining > 0
+                     else "村の出口から出立する")
+        self._show_compact_menu(
+            gm.here().name, f"支度 {len(picked)}/{sc.village_pick_count}", objective, menu,
+        )
+
+    @staticmethod
+    def _choice_menu(node):
+        return [(c.label, str(i), "この行動を選ぶ")
+                for i, c in enumerate(node.choices, 1)]
+
+    def _list_village_menu(self, sc, picked):
+        return [
+            (sc.village_option(key)["name"], str(i), "出立前の支度として選ぶ")
+            for i, key in enumerate(sc.village_order, 1) if key not in picked
+        ]
+
+    def _show_list_village_menu(self, sc, picked, menu):
+        remaining = sc.village_pick_count - len(picked)
+        self._show_compact_menu(
+            "出立前の村", f"支度 {len(picked)}/{sc.village_pick_count}",
+            f"支度をあと {remaining} つ選ぶ", menu,
+        )
+
+    def _combat_options(self, state):
+        opts = ["attack"]
+        if state.mp >= MP_COST:
+            opts.append("magic")
+        if state.herbs > 0:
+            opts.append("herb")
+        opts.append("flee")
+        return opts
+
+    def _combat_menu(self, state, enemies):
+        alive = [e for e in enemies if e.alive]
+        target = alive[0] if alive else None
+        target_name = target.name_ja if target else "敵"
+        menu = [
+            (f"攻撃 → {target_name}（自動）", "attack", "先頭の生存敵を武器で攻撃する"),
+        ]
+        if state.mp >= MP_COST:
+            menu.append((f"魔法 → {target_name}（自動）", "magic",
+                         f"MPを {MP_COST} 消費して先頭の生存敵を攻撃する"))
+        if state.herbs > 0:
+            menu.append(("薬草を使う", "herb", "薬草を使ってHPを回復する"))
+        menu.append(("逃げる", "flee", "戦闘からの離脱を試みる"))
+        return menu
+
+    def _show_combat_menu(self, state, enemies, menu):
+        alive = [e for e in enemies if e.alive]
+        situation = " / ".join(f"{e.name_ja} HP{max(0, e.hp)}" for e in alive)
+        self._show_compact_menu(
+            self.state.scenario.node(self.state.node).title or "戦闘",
+            situation or "敵なし", "敵を退けるか離脱する", menu,
+        )
+
     # --- 探索フェーズ（対話・敗北後もここに戻る＝Fix3） ---
     #     地図がある場合は「歩いて回る」UI。無ければ従来のリスト選択にフォールバック。
     #     ★どちらでも返り値は「選んだ探索 key の列」。run_session が village.explore で
@@ -349,8 +468,14 @@ class ConsoleController:
         self._show_here(gm, sc, picked)
         while len(picked) <= pick_count:
             self.state.location = gm.current           # 保存点で現在地を最新化
-            raw = input("> ").strip()
+            menu = self._village_menu(gm, sc, picked)
+            self._show_village_menu(gm, sc, picked, menu)
+            raw = self._meta_shortcut(input("選択 > ").strip())
+            raw = self._menu_command(raw, menu)
             low = raw.lower()
+            if low == "help":
+                self._show_help(menu)
+                continue
             meta = self._meta(low)
             if meta == RELOAD:
                 gm.current = self.state.location       # ロードで現在地を復元
@@ -374,7 +499,7 @@ class ConsoleController:
                 if self._try_depart(gm, picked, pick_count):
                     return picked
             else:
-                print("  go <方角> / look / do / depart（または status / save <名> / load <名> / quit）。")
+                print("  その選択は使用できません。")
         return picked
 
     def _try_move(self, gm, sc, picked, direction):
@@ -558,10 +683,15 @@ class ConsoleController:
         if txt:
             print(txt)
         labels = [(c.key, c.label) for c in n.choices]
+        menu = self._choice_menu(n)
         while True:
-            for i, (_k, lbl) in enumerate(labels, 1):
-                print(f"  {i}) {lbl}")
-            raw = input("> ").strip()
+            self._show_compact_menu(
+                n.title or n.id, "行動を選択", "次に取る行動を一つ選ぶ", menu,
+            )
+            raw = self._meta_shortcut(input("選択 > ").strip())
+            if raw.lower() == "help":
+                self._show_help(menu)
+                continue
             meta = self._meta(raw)
             if meta == RELOAD:
                 return RELOAD
@@ -571,7 +701,7 @@ class ConsoleController:
                 continue
             if raw.isdigit() and 1 <= int(raw) <= len(labels):
                 return labels[int(raw) - 1][0]
-            print("  番号で選ぶ（または status / save <名> / load <名> / quit）。")
+            print("  その選択は使用できません。")
 
     def combat_command(self, state, enemies):
         print()
@@ -579,14 +709,14 @@ class ConsoleController:
         print("  ▼ 戦闘 —— " + " / ".join(f"{e.name_ja}(HP{max(0, e.hp)})" for e in alive))
         print(f"     H: HP {state.hp}/{state.hp_max}  MP {state.mp}/{state.mp_max}  薬草 {state.herbs}")
         while True:
-            opts = ["attack"]
-            if state.mp >= MP_COST:
-                opts.append("magic")
-            if state.herbs > 0:
-                opts.append("herb")
-            opts.append("flee")
-            print("  コマンド: " + " / ".join(opts))
-            raw = input("> ").strip().lower()
+            opts = self._combat_options(state)
+            menu = self._combat_menu(state, enemies)
+            self._show_combat_menu(state, enemies, menu)
+            raw = self._meta_shortcut(input("選択 > ").strip())
+            raw = self._menu_command(raw, menu).lower()
+            if raw == "help":
+                self._show_help(menu, include_load=False)
+                continue
             meta = self._meta(raw)
             if meta == RELOAD:
                 print("  （戦闘中のロードはこの実装では非対応。安全な選択肢で load を）")
@@ -600,7 +730,7 @@ class ConsoleController:
             if raw == "magic" and state.mp < MP_COST:
                 print(f"  MP が足りない（{MP_COST} 必要・I-2）。魔法は選べない。")
                 continue
-            print("  用意されたコマンドから選ぶ。")
+            print("  その選択は使用できません。")
 
 
 def play_interactive(seed: int, scenario_id: str = DEFAULT_SCENARIO):
@@ -630,12 +760,13 @@ def list_explore_and_pick(controller: ConsoleController):
     pick_count = sc.village_pick_count
     picked = []
     while len(picked) < pick_count:
-        print(f"\n  ── 支度 {len(picked)+1}/{pick_count} ──")
-        for i, key in enumerate(order, 1):
-            opt = sc.village_option(key)
-            mark = "（選択済）" if key in picked else ""
-            print(f"  {i}) {opt['name']} — {opt.get('gain', '')} {mark}")
-        raw = input("> ").strip()
+        menu = controller._list_village_menu(sc, picked)
+        controller._show_list_village_menu(sc, picked, menu)
+        raw = controller._meta_shortcut(input("選択 > ").strip())
+        raw = controller._menu_command(raw, menu)
+        if raw.lower() == "help":
+            controller._show_help(menu)
+            continue
         meta = controller._meta(raw)
         if meta == "quit":
             sys.exit(0)
@@ -649,7 +780,7 @@ def list_explore_and_pick(controller: ConsoleController):
             picked.append(key)
             print(f"  → {sc.village_option(key).get('text', '')}")
         else:
-            print("  番号で選ぶ。")
+            print("  その選択は使用できません。")
     return picked
 
 
