@@ -450,7 +450,9 @@ class ConsoleController:
             recent_messages=self.tui.messages.messages(),
             ending=ending,
         )
-        model = screen_model_from_snapshot(build_render_snapshot(self.state, context))
+        model = screen_model_from_snapshot(build_render_snapshot(
+            self.state, context, active_game_map=game_map,
+        ))
         return self.tui.draw(model)
 
     # --- 入力案内（表示専用。状態・ログ・乱数には触れない） ---

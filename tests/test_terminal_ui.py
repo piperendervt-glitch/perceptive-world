@@ -20,6 +20,7 @@ from trpg_core.presentation import (
     PreparationView,
     PresentationContext,
     RenderSnapshot,
+    WorldObjectView,
     build_map_view,
     build_render_snapshot,
 )
@@ -104,6 +105,7 @@ def test_render_screen_stays_within_terminal_bounds():
     assert "HP 20/20" in screen
     assert "目的:" in screen
     assert "最近:" in screen
+    assert "注目: なし" in screen
     assert "1) 北へ" in screen
 
 
@@ -186,6 +188,37 @@ def test_snapshot_adapter_is_pure_deterministic_and_formats_numbers(monkeypatch)
     assert first.situation == "狼 HP7 / 猪 HP9"
     assert first.scene == "自動対象: 狼"
     assert [item[1] for item in first.menu] == ["attack", "flee"]
+    assert first.focus == "なし"
+
+
+def test_snapshot_adapter_resolves_focused_label_not_tuple_position():
+    snapshot = RenderSnapshot(
+        scenario_id="goblin", scene_id="well", scene_kind="village",
+        scene_title="古井戸", scene_text="", turn=0, objective="調べる",
+        player=PlayerView(20, 20, 10, 10, "薬草", 0),
+        world_objects=(
+            WorldObjectView("goblin:object/well-mark", "mural", "井戸の印"),
+            WorldObjectView("goblin:location/well", "location", "古井戸"),
+        ),
+        focused_object_id="goblin:location/well",
+    )
+    model = screen_model_from_snapshot(snapshot)
+    assert model.focus == "古井戸"
+    screen = render_screen(model, 80, 24)
+    assert "注目: 古井戸" in screen
+    assert "goblin:location/well" not in screen
+    assert "注目: 井戸の印" not in screen
+
+
+def test_snapshot_adapter_rejects_missing_focused_world_object():
+    snapshot = RenderSnapshot(
+        scenario_id="goblin", scene_id="well", scene_kind="village",
+        scene_title="古井戸", scene_text="", turn=0, objective="調べる",
+        player=PlayerView(20, 20, 10, 10, "薬草", 0),
+        focused_object_id="goblin:location/well",
+    )
+    with pytest.raises(ValueError):
+        screen_model_from_snapshot(snapshot)
 
 
 def test_village_snapshot_adapter_uses_structured_map_and_preparation():
@@ -310,8 +343,8 @@ def test_normal_tui_path_builds_render_snapshot_without_side_effects(monkeypatch
     seen = []
     original = presentation.build_render_snapshot
 
-    def spy(state_arg, context):
-        result = original(state_arg, context)
+    def spy(state_arg, context, *, active_game_map=None):
+        result = original(state_arg, context, active_game_map=active_game_map)
         seen.append(result)
         return result
 

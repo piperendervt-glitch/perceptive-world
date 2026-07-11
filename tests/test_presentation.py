@@ -18,12 +18,14 @@ from trpg_core.presentation import (
     PreparationView,
     PresentationContext,
     RenderSnapshot,
+    WorldObjectView,
     build_enemy_views,
     build_map_view,
     build_render_snapshot,
 )
 from trpg_core.scenario_loader import load_scenario
 from trpg_core.session import GameState
+from trpg_core.world import location_world_object_id
 
 
 def _state(scenario_id="goblin"):
@@ -46,7 +48,8 @@ def test_models_are_frozen_and_collections_are_copied_to_tuples():
     assert isinstance(snapshot.player.attributes, tuple)
     assert isinstance(snapshot.player.buffs, tuple)
     for model in (AttributeView, PlayerView, ActionView, EnemyView, PreparationView,
-                  MapExitView, MapView, PresentationContext, RenderSnapshot):
+                  MapExitView, MapView, WorldObjectView, PresentationContext,
+                  RenderSnapshot):
         assert model.__dataclass_params__.frozen
     with pytest.raises(dataclasses.FrozenInstanceError):
         snapshot.turn = 99
@@ -69,6 +72,8 @@ def test_builder_is_deterministic_numeric_and_optional_context_is_empty(monkeypa
     assert first.map is None
     assert first.recent_messages == ()
     assert first.ending is None
+    assert first.world_objects == ()
+    assert first.focused_object_id is None
     assert "\x1b" not in repr(first)
 
 
@@ -171,3 +176,62 @@ def test_presentation_module_has_no_ui_or_terminal_dependency():
         "CLEAR_SCREEN", "sys.stdout", "input(",
     )
     assert all(term not in source for term in forbidden)
+
+
+def test_world_object_view_is_frozen_and_holds_only_primitives():
+    view = WorldObjectView("goblin:location/well", "location", "古井戸")
+    assert dataclasses.asdict(view) == {
+        "object_id": "goblin:location/well", "kind": "location", "label": "古井戸",
+    }
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        view.label = "変更"
+
+
+def test_map_scene_exposes_only_current_world_object_without_auto_focus():
+    state = _state()
+    game_map = build_map(state.scenario, "well")
+    focus_before = state.focus_state
+    snapshot = build_render_snapshot(
+        state,
+        PresentationContext(scene_kind="village", scene_id="well"),
+        active_game_map=game_map,
+    )
+    assert snapshot.world_objects == (
+        WorldObjectView("goblin:location/well", "location", "古井戸"),
+    )
+    assert snapshot.focused_object_id is None
+    assert state.focus_state is focus_before
+
+
+def test_map_scene_exposes_serialized_focused_object_id_without_side_effects():
+    state = _state()
+    game_map = build_map(state.scenario, "well")
+    object_id = location_world_object_id("goblin", "well")
+    state.set_focused_object(object_id, focusable_object_ids=(object_id,))
+    before = (copy.deepcopy(state.snapshot()), state.rng.state(), copy.deepcopy(state.log),
+              state.focus_state, game_map.current, dict(game_map.locations))
+    snapshot = build_render_snapshot(
+        state, PresentationContext(scene_kind="village", scene_id="well"),
+        active_game_map=game_map,
+    )
+    assert snapshot.focused_object_id == "goblin:location/well"
+    assert isinstance(snapshot.focused_object_id, str)
+    assert snapshot.world_objects[0].label == "古井戸"
+    after = (state.snapshot(), state.rng.state(), state.log, state.focus_state,
+             game_map.current, game_map.locations)
+    assert after == before
+
+
+def test_non_map_scene_has_no_world_objects_and_dangling_focus_is_rejected():
+    state = _state()
+    snapshot = build_render_snapshot(state, PresentationContext(scene_kind="decision"))
+    assert snapshot.world_objects == ()
+    assert snapshot.focused_object_id is None
+
+    object_id = location_world_object_id("goblin", "well")
+    state.set_focused_object(object_id, focusable_object_ids=(object_id,))
+    before = (copy.deepcopy(state.snapshot()), state.rng.state(), copy.deepcopy(state.log),
+              state.focus_state)
+    with pytest.raises(ValueError):
+        build_render_snapshot(state, PresentationContext(scene_kind="decision"))
+    assert (state.snapshot(), state.rng.state(), state.log, state.focus_state) == before

@@ -147,6 +147,7 @@ class ScreenModel:
     situation: str
     status: str
     objective: str
+    focus: str = "なし"
     menu: list[tuple[str, str, str]] = field(default_factory=list)
     scene: str = ""
     recent: list[str] = field(default_factory=list)
@@ -216,11 +217,23 @@ def screen_model_from_snapshot(snapshot: RenderSnapshot) -> ScreenModel:
     if snapshot.ending:
         scene = "\n".join(part for part in (scene, snapshot.ending) if part)
 
+    focus_label = "なし"
+    if snapshot.focused_object_id is not None:
+        focused = next(
+            (obj for obj in snapshot.world_objects
+             if obj.object_id == snapshot.focused_object_id),
+            None,
+        )
+        if focused is None:
+            raise ValueError("focused object is missing from world_objects")
+        focus_label = focused.label
+
     return ScreenModel(
         place=snapshot.scene_title or snapshot.scene_id or "",
         situation=situation,
         status=status,
         objective=snapshot.objective,
+        focus=focus_label,
         menu=[(action.label, action.canonical_command, action.detail or "")
               for action in snapshot.actions if action.enabled],
         scene=scene,
@@ -258,7 +271,7 @@ def render_screen(model: ScreenModel, width: int, height: int) -> str:
     lines = [
         top,
         _row(f" 場面: {model.place}　{model.situation}", inner),
-        _row(f" H: {model.status}", inner),
+        _row(f" H: {model.status}  注目: {model.focus}", inner),
         _row(f" 目的: {model.objective}", inner),
         sep,
     ]

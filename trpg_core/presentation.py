@@ -11,6 +11,11 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable
 
 from .rules import modifier
+from .world import (
+    build_map_location_world_object_specs,
+    focusable_world_object_ids_for_current_location,
+    serialize_world_object_id,
+)
 
 
 @dataclass(frozen=True)
@@ -53,6 +58,13 @@ class EnemyView:
     hp: int
     alive: bool
     auto_target: bool = False
+
+
+@dataclass(frozen=True)
+class WorldObjectView:
+    object_id: str
+    kind: str
+    label: str
 
 
 @dataclass(frozen=True)
@@ -126,14 +138,22 @@ class RenderSnapshot:
     map: MapView | None = None
     recent_messages: tuple[str, ...] = field(default_factory=tuple)
     ending: str | None = None
+    world_objects: tuple[WorldObjectView, ...] = field(default_factory=tuple)
+    focused_object_id: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "actions", tuple(self.actions))
         object.__setattr__(self, "enemies", tuple(self.enemies))
         object.__setattr__(self, "recent_messages", tuple(self.recent_messages))
+        object.__setattr__(self, "world_objects", tuple(self.world_objects))
 
 
-def build_render_snapshot(state: Any, context: PresentationContext | None = None) -> RenderSnapshot:
+def build_render_snapshot(
+    state: Any,
+    context: PresentationContext | None = None,
+    *,
+    active_game_map: Any | None = None,
+) -> RenderSnapshot:
     """GameState相当の値を読み、ゲーム状態を変更せず表示用コピーを返す。
 
     ``state`` はduck typingで扱うため、sessionモジュールへの実行時依存を作らない。
@@ -157,6 +177,30 @@ def build_render_snapshot(state: Any, context: PresentationContext | None = None
         attributes=attributes,
         buffs=tuple(str(label) for label in state.buff_labels),
     )
+    focus_state = getattr(state, "focus_state", None)
+    focused_id = getattr(focus_state, "focused_object_id", None)
+    world_objects: tuple[WorldObjectView, ...] = ()
+    focused_object_id = None
+    if active_game_map is not None:
+        specs = build_map_location_world_object_specs(state.scenario.id, active_game_map)
+        focusable_ids = focusable_world_object_ids_for_current_location(
+            state.scenario.id, active_game_map, specs,
+        )
+        specs_by_id = {spec.object_id: spec for spec in specs}
+        world_objects = tuple(
+            WorldObjectView(
+                object_id=serialize_world_object_id(object_id),
+                kind=specs_by_id[object_id].kind,
+                label=specs_by_id[object_id].label,
+            )
+            for object_id in focusable_ids
+        )
+        if focused_id is not None:
+            if focused_id not in focusable_ids:
+                raise ValueError("focused object is not in the current scene")
+            focused_object_id = serialize_world_object_id(focused_id)
+    elif focused_id is not None:
+        raise ValueError("focused object requires an active map scene")
     return RenderSnapshot(
         scenario_id=str(state.scenario.id),
         scene_id=context.scene_id,
@@ -172,6 +216,8 @@ def build_render_snapshot(state: Any, context: PresentationContext | None = None
         map=context.map,
         recent_messages=tuple(str(message) for message in context.recent_messages),
         ending=context.ending,
+        world_objects=world_objects,
+        focused_object_id=focused_object_id,
     )
 
 
