@@ -19,6 +19,7 @@ import json
 import os
 import sys
 from collections import deque
+from collections.abc import Collection
 
 from .combat import run_combat
 from .input_actions import (
@@ -33,6 +34,12 @@ from .input_actions import (
 from .rng import Rng
 from .rules import MP_COST, modifier, roll, has_recon
 from .scenario_loader import load_scenario
+from .world import (
+    FocusState,
+    WorldObjectId,
+    clear_focus as resolve_clear_focus,
+    set_focus as resolve_set_focus,
+)
 
 # Windows console default cp932 chokes on CJK output; force UTF-8（resolve.py と同流儀）。
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -86,6 +93,7 @@ class GameState:
         self.started = False
         self.respawn_on_defeat = False
         self.log: list[dict] = []
+        self.focus_state = FocusState()
         # 表示専用フック（対話プレイでのみ設定）。**ログには一切影響しない**——
         # scripted/policy では None のままなので回帰ログはバイト単位で不変（seed=7 保証）。
         self.presenter = None
@@ -98,6 +106,33 @@ class GameState:
             self.presenter(entry)   # 表示のみ。乱数もログも触らない。
         return entry
 
+    def set_focused_object(
+        self,
+        object_id: WorldObjectId,
+        *,
+        focusable_object_ids: Collection[WorldObjectId],
+    ) -> None:
+        self.focus_state = resolve_set_focus(
+            self.focus_state,
+            object_id,
+            focusable_object_ids=focusable_object_ids,
+        )
+
+    def clear_focused_object(self) -> None:
+        self.focus_state = resolve_clear_focus(self.focus_state)
+
+    def transition_node(self, node: str) -> None:
+        if node == self.node:
+            return
+        self.node = node
+        self.clear_focused_object()
+
+    def transition_location(self, location: str | None) -> None:
+        if location == self.location:
+            return
+        self.location = location
+        self.clear_focused_object()
+
     def reset_for_village(self) -> None:
         """敗北後の再起（Fix3）: HP/MP を全快し、授かり・薬草をリセットする。
         探索フェーズをやり直すため、一度きりの探索ボーナスも白紙に戻す。
@@ -108,7 +143,9 @@ class GameState:
         self.herbs = 0
         self.buff_labels = []
         # 敗北後は村の入口（広場）から歩き直す
-        self.location = self.scenario.map_start if getattr(self.scenario, "has_map", False) else None
+        self.transition_location(
+            self.scenario.map_start if getattr(self.scenario, "has_map", False) else None
+        )
 
     # --- save/load（★rng の内部状態 a を含む＝ロード後の乱数列が一致する） ---
     _SNAP_FIELDS = (
@@ -128,6 +165,7 @@ class GameState:
             if k in snap:
                 setattr(self, k, snap[k])
         self.rng.set_state(snap["rng_a"])
+        self.clear_focused_object()
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +223,7 @@ class PolicyController:
 
 def _goto(state: GameState, node_id: str) -> None:
     """遷移先へ移り、enter_node を刻む（ノード進入はすべてここを通す）。"""
-    state.node = node_id
+    state.transition_node(node_id)
     state.emit(type="enter_node", node=node_id)
 
 
@@ -249,9 +287,11 @@ def _handle_combat(state: GameState, controller, node) -> str | None:
     if state.respawn_on_defeat:
         # 崩れ落ちる描写は combat の defeat イベントで presenter が出す。
         # HP 半分では詰みうるので全快とし、村の探索フェーズからやり直す（死なない設計）。
+        state.clear_focused_object()
         state.reset_for_village()
         state.emit(type="respawn", hp=state.hp, mp=state.mp)
         _run_village(state, controller)      # 探索を選び直す（on_defeat_return: village）
+        state.clear_focused_object()          # village から本編へ移る境界
         state.turn += 1
         _goto(state, sc.start_node)
         return None
@@ -269,6 +309,7 @@ def run_session(state: GameState, controller) -> str:
         state.started = True
         state.emit(type="session_start", seed=state.seed)
         _run_village(state, controller)
+        state.clear_focused_object()          # village から本編へ移る境界
         state.turn += 1
         _goto(state, sc.start_node)
 
@@ -631,14 +672,14 @@ class ConsoleController:
     def _walk_village(self, sc):
         from .map import build_map
         if not self.state.location:
-            self.state.location = sc.map_start
+            self.state.transition_location(sc.map_start)
         gm = build_map(sc, self.state.location)
         picked: list[str] = []
         pick_count = sc.village_pick_count
         self._message(f"拠点で支度する（{pick_count} つ整えて、出口から出立）")
         self._show_here(gm, sc, picked)
         while len(picked) <= pick_count:
-            self.state.location = gm.current           # 保存点で現在地を最新化
+            self.state.transition_location(gm.current)  # 保存点で現在地を最新化
             menu = self._village_menu(gm, sc, picked)
             self._show_village_menu(gm, sc, picked, menu)
             original, token = self._read_input_token()
@@ -676,7 +717,7 @@ class ConsoleController:
 
     def _try_move(self, gm, sc, picked, direction):
         if gm.move(direction):
-            self.state.location = gm.current
+            self.state.transition_location(gm.current)
             self._message(f"{gm.here().name}へ移動した。")
             self._show_here(gm, sc, picked)
         else:
