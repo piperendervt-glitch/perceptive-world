@@ -1,0 +1,172 @@
+# ruins.yaml — シナリオ「地下遺跡の探索」（カテゴリB：探索・緊張重心）
+#
+# 戦闘は1回だけ（終盤の番人戦）。大半は移動・vit/mag 判定・分岐。行き止まりと引き返し。
+# 既存 effect タイプ（hit_bonus/damage_bonus/item/recon）だけで組む＝エンジン無改変。
+#
+# ★エンジンの制約に沿った割り当て:
+#   - 技能判定(_resolve_check)を助けるのは **recon だけ**（recon_auto=罠を自動回避 /
+#     recon_bonus=補正）。よって「灯りを確保」→recon（罠回避）が探索の要。
+#   - hit_bonus / damage_bonus は**戦闘のみ**に効く（判定には効かない）。よって
+#     「古文書＝番人の弱点(hit_bonus)」「古い聖具(damage_bonus)」は終盤の番人戦で効く。
+#   （＝「知識で技能判定そのものを有利化」はエンジンでは表現不可。詳細は報告で指摘。）
+#
+# LLM-GM の描写テスト観点: 静かな緊張・何もいない空間の不穏さ・引き返しの徒労感を
+#   戦闘なしでどう持たせるか（trace-world の「曖昧さ」に近い）。
+# ※市販の数表・固有名詞はコピーしない。数値は自前。Ordia の世界観（理・血統魔法・
+#   転生者だけが刻印を読める情報格差 I-4）に沿う。
+
+meta:
+  id: ruins
+  title: "地下遺跡の探索"
+  intro: "村外れの丘に、理の時代より古い地下遺跡の口が開いた。奥に眠る『心臓』を持ち帰れば村は潤う――が、戻った者はいない。H だけが、壁の刻印を読める。"
+
+character:
+  hp: 20
+  mp: 10
+  attributes: {str: 8, mag: 8, vit: 9}
+
+village:                      # 遺跡前の野営で 2 つだけ支度する（少ない＝選択が重い）
+  pick_count: 2
+  options:
+    - key: light
+      name: "灯火を十分に確保する"
+      gain: "刻印の罠を灯りで自動回避 / 暗がりの徒渉を自動成功"
+      text: "松明と油を革袋に満たす。闇に呑まれた廊でも、足元の刻印溝を先に見つけられる――踏まずに、渡れる。"
+      effect: {type: recon}
+    - key: lore
+      name: "地上の古文書を読み込む"
+      gain: "遺跡の番人への命中 +2"
+      text: "崩れた石棚の断片を H は読み解く。番人の像には継ぎ目がある――「左の肩甲に力の流れが集まる」。番人への一手が内心に刻まれる。"
+      effect: {type: hit_bonus, target_enemy: sentinel, value: 2}
+    - key: balm
+      name: "携行の傷薬を仕込む"
+      gain: "傷薬 ×2（戦闘中に使用）"
+      text: "血止めの膏薬を二包み、帯に挟む。「石の拳は重い。砕ける前に塗り込め」。"
+      effect: {type: item, item: herb, count: 2}
+    - key: relic
+      name: "錆びた聖具を研ぐ"
+      gain: "物理ダメージ +2"
+      text: "野営の石で古い聖具の刃を起こす。理の金属は、石の番人にも食い込む硬さを残していた。"
+      effect: {type: damage_bonus, kind: physical, value: 2}
+    - key: ward
+      name: "護符に息を通す"
+      gain: "全命中判定 +1"
+      text: "古い護符を掌で温め、息を通す。石の気配に呑まれかけたとき、狙いがわずかにぶれにくくなる。"
+      effect: {type: hit_bonus, value: 1}
+
+enemies:                      # 遺跡の番人（終盤に一度だけ相対する・唯一の戦闘なので手強い）。自前の数値
+  sentinel: {name: "石の番人",   hp: 24, atk: 3, dmg: [3, 6], target: 8}
+  shard:    {name: "石片の従者", hp: 6,  atk: 1, dmg: [1, 3], target: 6}
+
+map:                          # 遺跡前の野営を拠点に支度して回る
+  start: camp
+  locations:
+    camp:    {name: "遺跡前の野営",   exits: {north: archive, east: smithy, south: shrine, west: lamphut}}
+    archive: {name: "崩れた石棚",     exits: {south: camp, north: apoth}, action: lore}
+    apoth:   {name: "薬師の天幕",     exits: {south: archive},           action: balm}
+    smithy:  {name: "野鍛冶",         exits: {west: camp},               action: relic}
+    shrine:  {name: "古い護符棚",     exits: {north: camp},              action: ward}
+    lamphut: {name: "灯火番の小屋",   exits: {east: camp, west: gate},   action: light}
+    gate:    {name: "遺跡の口（地下へ）", exits: {east: lamphut}, leads_to_adventure: true}
+
+start_node: mouth
+
+nodes:
+  mouth:
+    title: "遺跡の口"
+    text:
+      - "石の口が地下へ続く。空気は冷たく、埃さえ動かない。物音ひとつない――それが、かえって背を押す。"
+    choices:
+      - key: down
+        label: "崩れた大階段を降りる【vit 判定 / 目標 7】"
+        check: {stat: vit, target: 7, tag: stair}
+        on_success: hall
+        on_failure: ledge
+
+  ledge:
+    title: "崩れた岩棚"
+    text:
+      - "足を滑らせ、崩れた段の途中で止まる。下は闇。息を整え、岩棚を伝って広間へ下りるしかない。"
+    choices:
+      - {key: recover, label: "岩棚を伝って広間へ下りる", next: hall}
+
+  hall:
+    title: "無音の広間"
+    text:
+      - "広間には何もいない。柱の影が長い。奥へは二つ――淀んだ気の澱む左の回廊と、崩落した右の坑道。何もいないのに、見られている気がする。"
+    choices:
+      - key: glyph
+        label: "左の回廊の気を読んで進む【mag 判定 / 目標 7】"
+        check: {stat: mag, target: 7, tag: airread}
+        on_success: gallery
+        on_failure: alcove
+      - key: force
+        label: "右の崩落坑を押し進む【vit 判定 / 目標 8】"
+        check: {stat: vit, target: 8, tag: push}
+        on_success: gallery
+        on_failure: alcove
+
+  alcove:
+    title: "袋小路の壁龕"
+    text:
+      - "進んだ先は壁龕の袋小路。空の石棺が一つ、蓋を開けて待っている――ように見えるだけだ。何もない。引き返す。"
+    choices:
+      - {key: retreat, label: "壁龕から広間へ引き返す", next: hall}
+
+  gallery:
+    title: "刻印の廊"
+    text:
+      - "床一面に刻印の溝が走る。理の時代の罠――踏めば、何が起きるかは読めない。灯りがあれば、溝は避けて渡れる。"
+    choices:
+      - key: cross
+        label: "刻印を避けて廊を渡る【罠・灯りで回避 / vit 判定 目標 8】"
+        check: {stat: vit, target: 8, tag: trap, recon_auto: true}
+        on_success: door
+        on_failure: pit
+      - key: skirt
+        label: "壁を伝って刻印を迂回する【vit 判定 / 目標 9】"
+        check: {stat: vit, target: 9, tag: skirt}
+        on_success: door
+        on_failure: pit
+
+  pit:
+    title: "落とし穴の底"
+    text:
+      - "刻印が沈み、床が抜けた。浅い縦穴の底に落ちる。骨は折れていない――幸運だ。壁を這い上がり、廊へ戻る。"
+    choices:
+      - {key: climb, label: "縦穴を這い上がって廊へ戻る", next: gallery}
+
+  door:
+    title: "封印の扉"
+    text:
+      - "廊の果てに、環状の封印を刻んだ石の扉。転生者の記憶の底に、この環の解き方がかすかに触れる――あるいは、力ずくか。"
+    choices:
+      - key: read
+        label: "封印の環を読み解く【mag 判定 / 目標 7：転生者の記憶】"
+        check: {stat: mag, target: 7, tag: seal}
+        on_success: sanctum
+        on_failure: door
+      - key: pry
+        label: "扉をこじ開ける【vit 判定 / 目標 9】"
+        check: {stat: vit, target: 9, tag: pry}
+        on_success: sanctum
+        on_failure: door
+
+  sanctum:
+    title: "心臓の間"
+    text:
+      - "扉の奥、青白い光を宿す『心臓』が台座に浮く。その傍らで、石の番人が瞼のような継ぎ目を開き、石片の従者が軋みながら立ち上がった。ここだけに、音がある。"
+    encounter: [sentinel, shard]
+    on_win: heart
+
+  heart:
+    title: "心臓を得て"
+    text:
+      - "番人は砕けて石に還り、間に静寂が戻った。H は台座の『心臓』を外套に包み、無音の階を昇る。地上の光の中で、掌に残る数値の余韻だけが、この静けさを覚えている。"
+    ending: clear
+
+  defeat:
+    title: "遺跡の口で目覚め"
+    text:
+      - "気づくと遺跡の口の外、朝露の草の上だった。誰が運んだのか――村の者か、それとも。傷は洗われ、息は整う。心臓は、まだ闇の底にある。"
+    on_defeat_return: village
