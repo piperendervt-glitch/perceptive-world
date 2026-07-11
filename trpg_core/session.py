@@ -21,6 +21,15 @@ import sys
 from collections import deque
 
 from .combat import run_combat
+from .input_actions import (
+    DirectCommand,
+    MetaRequest,
+    SelectMenuIndex,
+    parse_raw_input,
+    resolve_combat_command,
+    resolve_direction,
+    resolve_menu_index,
+)
 from .rng import Rng
 from .rules import MP_COST, modifier, roll, has_recon
 from .scenario_loader import load_scenario
@@ -445,14 +454,51 @@ class ConsoleController:
 
     @staticmethod
     def _menu_command(raw, menu):
-        if raw.isdigit() and 1 <= int(raw) <= len(menu):
-            return menu[int(raw) - 1][1]
-        return raw
+        token = parse_raw_input(raw)
+        return ConsoleController._command_from_token(token, menu, raw=raw)
 
     @staticmethod
     def _meta_shortcut(raw):
         # 小文字 s は既存の south。メタ短縮は大文字だけを扱う。
-        return {"S": "status", "H": "help", "Q": "quit"}.get(raw, raw)
+        token = parse_raw_input(raw)
+        if raw in ("S", "H", "Q") and isinstance(token, MetaRequest):
+            return token.command
+        return raw
+
+    @staticmethod
+    def _read_input_token(prompt="選択 > "):
+        raw = input(prompt).strip()
+        return raw, parse_raw_input(raw)
+
+    @staticmethod
+    def _command_from_token(token, menu=(), *, raw=None, normalize_direct=True):
+        if token is None:
+            return raw if raw is not None else ""
+        if isinstance(token, SelectMenuIndex):
+            command = resolve_menu_index(token, tuple(item[1] for item in menu))
+            return command if command is not None else (raw if raw is not None else "")
+        if isinstance(token, DirectCommand):
+            return token.text if normalize_direct else (raw if raw is not None else token.text)
+        if isinstance(token, MetaRequest):
+            return (f"{token.command} {token.argument}"
+                    if token.argument is not None else token.command)
+        return ""
+
+    @staticmethod
+    def _legacy_meta_command(raw, token, *, casefold):
+        """MetaRequestを場面ごとの従来case規則で既存_meta()入力へ戻す。"""
+        if not isinstance(token, MetaRequest):
+            return None
+        if raw in ("S", "H", "Q"):
+            return token.command
+        head = raw.split(maxsplit=1)[0] if raw else ""
+        if token.command == "help" and head.lower() == "help":
+            pass
+        elif not casefold and head != token.command:
+            return None
+        command = (f"{token.command} {token.argument}"
+                   if token.argument is not None else token.command)
+        return command.lower() if casefold else command
 
     def _village_menu(self, gm, sc, picked):
         loc = gm.here()
@@ -595,9 +641,9 @@ class ConsoleController:
             self.state.location = gm.current           # 保存点で現在地を最新化
             menu = self._village_menu(gm, sc, picked)
             self._show_village_menu(gm, sc, picked, menu)
-            raw = self._meta_shortcut(input("選択 > ").strip())
-            raw = self._menu_command(raw, menu)
-            low = raw.lower()
+            original, token = self._read_input_token()
+            raw = self._command_from_token(token, menu, raw=original)
+            low = raw.lower() if raw is not None else ""
             if low == "help":
                 self._show_help(menu)
                 continue
@@ -612,12 +658,13 @@ class ConsoleController:
                 continue
             parts = low.split()
             cmd = parts[0] if parts else ""
+            direction = (resolve_direction(low)
+                         if len(parts) == 1 or cmd in ("go", "move", "g", "walk")
+                         else None)
             if cmd in ("look", "map", "m", "l"):
                 self._show_here(gm, sc, picked)
-            elif cmd in ("go", "move", "g", "walk") and len(parts) >= 2 and parts[1] in _DIR_ALIAS:
-                self._try_move(gm, sc, picked, _DIR_ALIAS[parts[1]])
-            elif low in _DIR_ALIAS:                     # 素の「北」「n」等でも移動
-                self._try_move(gm, sc, picked, _DIR_ALIAS[low])
+            elif direction is not None:
+                self._try_move(gm, sc, picked, direction)
             elif cmd in ("do", "explore", "search", "action", "x", "調べる", "聞く"):
                 self._do_action(gm, sc, picked, pick_count)
             elif cmd in ("depart", "leave", "forest", "森", "発つ"):
@@ -836,7 +883,15 @@ class ConsoleController:
                 self._show_compact_menu(
                     n.title or n.id, "行動を選択", "次に取る行動を一つ選ぶ", menu,
                 )
-            raw = self._meta_shortcut(input("選択 > ").strip())
+            original, token = self._read_input_token()
+            raw = self._command_from_token(
+                token, menu, raw=original, normalize_direct=False,
+            )
+            meta_command = self._legacy_meta_command(original, token, casefold=False)
+            if meta_command is not None:
+                raw = meta_command
+            elif isinstance(token, MetaRequest):
+                raw = original
             if raw.lower() == "help":
                 self._show_help(menu)
                 continue
@@ -862,8 +917,9 @@ class ConsoleController:
             opts = self._combat_options(state)
             menu = self._combat_menu(state, enemies)
             self._show_combat_menu(state, enemies, menu)
-            raw = self._meta_shortcut(input("選択 > ").strip())
-            raw = self._menu_command(raw, menu).lower()
+            original, token = self._read_input_token()
+            raw = self._command_from_token(token, menu, raw=original)
+            raw = raw.lower() if raw is not None else ""
             if raw == "help":
                 self._show_help(menu, include_load=False)
                 continue
@@ -875,8 +931,9 @@ class ConsoleController:
                 self._message("中断する。"); sys.exit(0)
             if meta == "handled":
                 continue
-            if raw in opts:
-                return raw
+            combat_command = resolve_combat_command(raw, allowed=opts)
+            if combat_command is not None:
+                return combat_command
             if raw == "magic" and state.mp < MP_COST:
                 self._message(f"MP が足りない（{MP_COST} 必要・I-2）。魔法は選べない。")
                 continue
@@ -917,8 +974,15 @@ def list_explore_and_pick(controller: ConsoleController):
     while len(picked) < pick_count:
         menu = controller._list_village_menu(sc, picked)
         controller._show_list_village_menu(sc, picked, menu)
-        raw = controller._meta_shortcut(input("選択 > ").strip())
-        raw = controller._menu_command(raw, menu)
+        original, token = controller._read_input_token()
+        raw = controller._command_from_token(
+            token, menu, raw=original, normalize_direct=False,
+        )
+        meta_command = controller._legacy_meta_command(original, token, casefold=False)
+        if meta_command is not None:
+            raw = meta_command
+        elif isinstance(token, MetaRequest):
+            raw = original
         if raw.lower() == "help":
             controller._show_help(menu)
             continue

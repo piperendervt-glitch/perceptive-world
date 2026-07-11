@@ -439,3 +439,18 @@ def test_record_cli_passes_ui_without_changing_fixture_format(monkeypatch):
                         "--ui", "tui", "--out", out]) == 0
     assert calls == ["tui"]
     assert set(fixture) == {"scenario", "seed", "inputs", "expected_log"}
+
+
+def test_non_tty_fallback_uses_same_session_input_resolver(monkeypatch):
+    state, controller = _controller("tui")
+    stream = io.StringIO()
+    controller.tui = TerminalUI(stream=stream, size_getter=_size(), environ={})
+    node = state.scenario.node(state.scenario.start_node)
+    calls = []
+    original = session.parse_raw_input
+    monkeypatch.setattr(session, "parse_raw_input",
+                        lambda raw: calls.append(raw) or original(raw))
+    monkeypatch.setattr(builtins, "input", lambda _prompt: "01")
+    assert controller.choice(node.id, [c.key for c in node.choices]) == node.choices[0].key
+    assert calls == ["01"]
+    assert "menu表示へ切り替えます" in stream.getvalue()

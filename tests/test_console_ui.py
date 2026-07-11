@@ -11,7 +11,9 @@ import pytest
 from trpg_core.map import build_map
 from trpg_core.record import RecordingController
 from trpg_core.scenario_loader import load_scenario
-from trpg_core.session import ConsoleController, GameState
+from trpg_core import session
+from trpg_core.input_actions import MetaRequest, parse_raw_input
+from trpg_core.session import ConsoleController, GameState, list_explore_and_pick
 
 
 def _controller(seed=7, scenario_id="goblin"):
@@ -207,3 +209,93 @@ def test_all_scenario_check_tags_have_safe_player_labels(scenario_id):
             assert label != tag
             assert tag not in label
             assert "〔" in label or label == "判定"
+
+
+def test_menu_number_wrapper_uses_new_index_semantics_without_changing_invalid_tokens():
+    menu = [("first", "attack", ""), ("last", "flee", "")]
+    assert ConsoleController._menu_command("01", menu) == "attack"
+    assert ConsoleController._menu_command("2", menu) == "flee"
+    assert ConsoleController._menu_command("0", menu) == "0"
+    assert ConsoleController._menu_command("3", menu) == "3"
+    assert ConsoleController._menu_command("+1", menu) == "+1"
+    assert ConsoleController._menu_command("-1", menu) == "-1"
+
+
+def test_decision_input_calls_raw_parser_and_returns_existing_choice_key(monkeypatch):
+    state, controller = _controller()
+    node = state.scenario.node(state.scenario.start_node)
+    calls = []
+    original = session.parse_raw_input
+
+    def spy(raw):
+        calls.append(raw)
+        return original(raw)
+
+    monkeypatch.setattr(session, "parse_raw_input", spy)
+    monkeypatch.setattr(builtins, "input", lambda _prompt: "01")
+    assert controller.choice(node.id, [c.key for c in node.choices]) == node.choices[0].key
+    assert calls == ["01"]
+
+
+def test_list_preparation_uses_parser_but_returns_only_explore_keys(monkeypatch):
+    state, controller = _controller()
+    calls = []
+    original = session.parse_raw_input
+    answers = iter(["01", "01", "01"])
+    monkeypatch.setattr(session, "parse_raw_input",
+                        lambda raw: calls.append(raw) or original(raw))
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
+    picked = list_explore_and_pick(controller)
+    assert picked == state.scenario.village_order[:state.scenario.village_pick_count]
+    assert calls == ["01", "01", "01"]
+
+
+def test_village_south_input_is_resolved_before_existing_move_handler(monkeypatch):
+    state, controller = _controller()
+    seen = []
+
+    class StopWalk(Exception):
+        pass
+
+    def stop(_gm, _sc, _picked, direction):
+        seen.append(direction)
+        raise StopWalk
+
+    monkeypatch.setattr(controller, "_try_move", stop)
+    monkeypatch.setattr(builtins, "input", lambda _prompt: "s")
+    with pytest.raises(StopWalk):
+        controller._walk_village(state.scenario)
+    assert seen == ["south"]
+
+
+def test_combat_input_uses_parser_and_allowed_resolver(monkeypatch):
+    state, controller = _controller()
+    _node, enemies = _combat(state)
+    parse_calls = []
+    combat_calls = []
+    original_parse = session.parse_raw_input
+    original_combat = session.resolve_combat_command
+    monkeypatch.setattr(session, "parse_raw_input",
+                        lambda raw: parse_calls.append(raw) or original_parse(raw))
+
+    def combat_spy(text, *, allowed=None):
+        combat_calls.append((text, tuple(allowed)))
+        return original_combat(text, allowed=allowed)
+
+    monkeypatch.setattr(session, "resolve_combat_command", combat_spy)
+    monkeypatch.setattr(builtins, "input", lambda _prompt: "ATTACK")
+    assert controller.combat_command(state, enemies) == "attack"
+    assert parse_calls == ["ATTACK"]
+    assert combat_calls == [("attack", tuple(controller._combat_options(state)))]
+
+
+def test_scene_specific_meta_case_compatibility_is_preserved():
+    uppercase_status = parse_raw_input("STATUS")
+    uppercase_help = parse_raw_input("HELP")
+    assert isinstance(uppercase_status, MetaRequest)
+    assert ConsoleController._legacy_meta_command(
+        "STATUS", uppercase_status, casefold=False) is None
+    assert ConsoleController._legacy_meta_command(
+        "STATUS", uppercase_status, casefold=True) == "status"
+    assert ConsoleController._legacy_meta_command(
+        "HELP", uppercase_help, casefold=False) == "help"
