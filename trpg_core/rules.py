@@ -17,23 +17,48 @@ from __future__ import annotations
 
 from .rng import Rng, d6
 
-# --- キャラクター（Ordia の H）: canon/status.yaml が読めれば max 値を使い、
-#     読めなければ以下でフォールバックする（session.load_character が実施） ---
+# --- 判定の仕組み（エンジン側の定数）。キャラの能力値そのものはシナリオが持つ。 ---
 PIVOT = 8       # 能力値の基準（血統補正なしの一般人相当）= modifier ±0
 MP_COST = 2     # I-2: 魔法 1 回のコスト
-
-DEFAULT_CHAR = {
-    "hp_max": 20,
-    "mp_max": 10,
-    "str": 8,
-    "mag": 8,
-    "vit": 9,
-}
 
 
 def modifier(attribute: int) -> int:
     """能力値 → 修正値。attribute - PIVOT（str+0 / mag+0 / vit+1 が既定）。"""
     return attribute - PIVOT
+
+
+# ---------------------------------------------------------------------------
+# 効果(effect)の適用ロジック（★エンジン側）
+#   宣言はシナリオ(YAML)、解釈と適用はここ。state.effects は受動効果の宣言リスト
+#   （item は探索時に state.herbs へ畳み込むので、ここには hit_bonus/damage_bonus/
+#   recon だけが積まれる）。新しい effect.type を足すときだけエンジンを触る。
+# ---------------------------------------------------------------------------
+
+def effect_hit_bonus(state, target_key: str) -> int:
+    """命中への上乗せ。target_enemy 指定なし＝全対象、指定あり＝その敵のみ。
+    （祝福 value1・全対象 / 村長 value2・頭目のみ、を一般化して合算）。"""
+    total = 0
+    for eff in state.effects:
+        if eff.get("type") != "hit_bonus":
+            continue
+        te = eff.get("target_enemy")
+        if te is None or te == target_key:
+            total += int(eff.get("value", 0))
+    return total
+
+
+def effect_damage_bonus(state, kind: str) -> int:
+    """ダメージへの上乗せ（kind が一致するものだけ）。短剣 physical+2 を一般化。"""
+    total = 0
+    for eff in state.effects:
+        if eff.get("type") == "damage_bonus" and eff.get("kind") == kind:
+            total += int(eff.get("value", 0))
+    return total
+
+
+def has_recon(state) -> bool:
+    """偵察効果を持つか（藪自動成功・忍び補正・初撃必中の可否）。"""
+    return any(eff.get("type") == "recon" for eff in state.effects)
 
 
 def roll(rng: Rng, mod: int, target: int) -> dict:

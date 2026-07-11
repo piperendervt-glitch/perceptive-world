@@ -1,92 +1,39 @@
-"""village.py — 村の探索フェーズ（★5 つから 3 つ選ぶ）.
+"""village.py — 村（出立前）の探索フェーズの *進行制御*（エンジン側）.
 
-選択のたびに **d6 を 1 回消費する**（値は使わないが、これにより後続の判定が
-seed 直結でなくなる＝探索の並びが乱数列をずらす）。固定テキストは Ordia の
-世界観に沿う（数行）。数値ボーナスは H の内心にだけ映る（I-4）。
+探索の中身（選択肢・効果・固定テキスト）は **シナリオ(YAML)** の `village:` にある。
+ここに残すのは「進行の仕組み」だけ:
+  - 選択のたびに **d6 を 1 回消費する**（値は使わないが、探索の並びが後続の乱数列を
+    ずらす＝seed 直結でなくする）。この消費は不変（回帰の基盤）。
+  - 効果の *適用*（宣言 → state への反映）。宣言はシナリオ、適用はエンジン。
+
+数値ボーナスは H の内心にだけ映る（I-4）。
 """
 
 from __future__ import annotations
 
 from .rng import d6
 
-# key -> (表示名, gain 文言（ログに残す）, 固定描写, ボーナス適用関数)
-# ボーナス適用関数は GameState を受け取り、フラグ/持ち物を立てる。
 
-EXPLORE_ORDER = ["elder", "herbs", "shrine", "well", "scout"]
-
-
-def _apply_elder(st):
-    st.elder = True
-
-
-def _apply_herbs(st):
-    st.herbs += 2
-
-
-def _apply_shrine(st):
-    st.blessing = True
-
-
-def _apply_well(st):
-    st.dagger = True
-
-
-def _apply_scout(st):
-    st.scout = True
-
-
-EXPLORE = {
-    "elder": {
-        "name": "村長に詳しく聞く",
-        "gain": "頭目への命中 +2",
-        "text": (
-            "村長は囲炉裏の灰を掻き、頭目の癖を低く語る。"
-            "「あれは右へ躱す。左を突け」——H の内心に、頭目への一手が刻まれる。"
-        ),
-        "apply": _apply_elder,
-    },
-    "herbs": {
-        "name": "薬草の女を訪ねる",
-        "gain": "薬草 ×2（戦闘中に使用）",
-        "text": (
-            "薬草の女は乾いた葉を二包み、H の掌に押しつける。"
-            "「傷が深くなったら噛みなさい。苦いが、閉じる」。"
-        ),
-        "apply": _apply_herbs,
-    },
-    "shrine": {
-        "name": "古い祠に祈る",
-        "gain": "祝福：全命中判定 +1",
-        "text": (
-            "苔むした祠に手を合わせる。名も知れぬ古い神の気配が、"
-            "H の指先をわずかに落ち着かせる——狙いが、ぶれにくくなる。"
-        ),
-        "apply": _apply_shrine,
-    },
-    "well": {
-        "name": "井戸を調べる",
-        "gain": "錆びた短剣：物理ダメージ +2",
-        "text": (
-            "涸れた井戸の底に、錆びた短剣が沈んでいた。"
-            "刃こぼれてはいるが、素手よりはずっと深く届く。"
-        ),
-        "apply": _apply_well,
-    },
-    "scout": {
-        "name": "森を偵察する",
-        "gain": "藪ルート自動成功 / 見張りへの初撃が必中",
-        "text": (
-            "H は日暮れ前の森を一巡りする。藪の抜け道と、見張りの立つ角を覚えた。"
-            "最初の一撃は、外さない。"
-        ),
-        "apply": _apply_scout,
-    },
-}
+def apply_effect(state, effect: dict | None) -> None:
+    """effect 宣言をエンジンが解釈して state に反映する。
+    item は state.herbs へ畳み込む。受動効果は state.effects に積み、
+    命中/ダメージ/偵察の判定時に rules の effect_* / has_recon が解釈する。"""
+    if not effect:
+        return
+    etype = effect.get("type")
+    if etype == "item":
+        if effect.get("item") == "herb":
+            state.herbs += int(effect.get("count", 0))
+        # 他アイテム種別を足すときはここに分岐を追加（＝エンジンを触る）
+    else:
+        # hit_bonus / damage_bonus / recon などの受動効果
+        state.effects.append(dict(effect))
 
 
 def explore(state, key: str) -> None:
-    """探索を 1 つ実行する。d6 を 1 回消費し、ボーナスを適用し、explore を記録する。"""
-    opt = EXPLORE[key]
-    d6(state.rng)                 # ★選択のたびに d6 を 1 回消費（値は使わない）
-    opt["apply"](state)
-    state.emit(type="explore", place=key, gain=opt["gain"])
+    """探索を 1 つ実行する。d6 を 1 回消費し、効果を適用し、explore を記録する。"""
+    opt = state.scenario.village_option(key)
+    d6(state.rng)                                  # ★選択のたびに d6 を 1 回消費（不変）
+    apply_effect(state, opt.get("effect"))
+    state.buff_labels.append(opt.get("name", key))  # 内心表示用（ログには出ない）
+    state.emit(type="explore", place=key, gain=opt.get("gain", ""))

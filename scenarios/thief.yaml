@@ -1,0 +1,125 @@
+# thief.yaml — シナリオ「盗賊のアジト」（データのみ・エンジン無改変で動く）
+#
+# goblin.yaml と同じ *仕組み*（既存の effect タイプ hit_bonus / damage_bonus /
+# item / recon、戦闘・探索・2D6判定）だけで組んだ第2シナリオ。エンジンのコードは
+# 一切変えていない。敵・ノード・探索・固定テキストはすべて別物。
+# ※ 市販ルールブックの本文・数表・固有名詞はコピーしていない（自前の数値・世界観）。
+
+meta:
+  id: thief
+  title: "盗賊のアジト"
+  intro: "廃坑を根城にする盗賊団が、隊商を襲っては人を攫っている。人知れず頭領を討ち、囚われた娘を連れ帰れ——という依頼が H に回ってきた。"
+
+character:
+  hp: 20
+  mp: 10
+  attributes: {str: 8, mag: 8, vit: 9}
+
+village:                      # 出立前の支度（宿場町で 3 つ整える）
+  pick_count: 3
+  options:
+    - key: map
+      name: "隊商の生き残りに坑道図を写させる"
+      gain: "頭領への命中 +2"
+      text: "震える手が炭で坑道の分岐を描く。「頭領はいちばん奥、風の通る間にいる。右肩が下がる癖がある」——H の内心に、頭領への一手が刻まれる。"
+      effect: {type: hit_bonus, target_enemy: boss, value: 2}
+    - key: poultice
+      name: "宿の女将に傷薬を分けてもらう"
+      gain: "傷薬 ×2（戦闘中に使用）"
+      text: "女将は油紙の包みを二つ、H の帯に挟む。「坑の中は湿気る。膿む前にこれを当てなさい」。"
+      effect: {type: item, item: herb, count: 2}
+    - key: charm
+      name: "門前の道祖神に手を合わせる"
+      gain: "加護：全命中判定 +1"
+      text: "苔むした道祖神に銭を供える。古い路の神が、H の踏み込みをわずかに支える——足元が、ぶれにくくなる。"
+      effect: {type: hit_bonus, value: 1}
+    - key: spike
+      name: "鍛冶場で仕込み杭を打ってもらう"
+      gain: "仕込み杭：物理ダメージ +2"
+      text: "鍛冶は焼けた鉄を短く打ち、革紐を巻いて H に握らせる。「素手よりは、ずっと深く刺さる」。"
+      effect: {type: damage_bonus, kind: physical, value: 2}
+    - key: casing
+      name: "日暮れに廃坑を下見する"
+      gain: "崩れ坑を自動で抜ける / 見張りへの初撃が必中"
+      text: "H は暮れ方の斜面を一巡りする。崩れかけた坑道の抜け方と、見張りの立つ角を覚えた。最初の一撃は、外さない。"
+      effect: {type: recon}
+
+enemies:                      # 盗賊団（自前の数値。goblin とは別物）
+  lookout: {name: "見張りの盗賊", hp: 5,  atk: 0, dmg: [1, 2], target: 6}
+  thug:    {name: "荒くれの盗賊", hp: 6,  atk: 1, dmg: [1, 3], target: 7}
+  boss:    {name: "盗賊の頭領",   hp: 20, atk: 2, dmg: [2, 5], target: 8}
+
+start_node: gate
+
+nodes:
+  gate:
+    title: "裏木戸"
+    text:
+      - "廃坑の裏手、崩れた石積みの奥に盗賊の裏木戸がある。正面には見張りの篝火。横手には、崩れかけて人ひとり通れる旧坑道。"
+    choices:
+      - {key: force, label: "木戸を蹴破って踏み込む", next: yard}
+      - key: crawl
+        label: "崩れ坑を這って抜ける【vit 判定 / 目標 8】"
+        check: {stat: vit, target: 8, tag: crawl, recon_auto: true}
+        on_success: inner
+        on_failure: yard
+
+  inner:
+    title: "旧坑道の奥"
+    text:
+      - "崩れ坑を抜けると、篝火の裏に出た。見張りは気づいていない。奥へ続く横坑が、口を開けている。"
+    choices:
+      - {key: slip, label: "そのまま横坑へ滑り込む", next: gallery}
+
+  yard:
+    title: "篝火の前"
+    text:
+      - "篝火のそば、見張りの盗賊が一人。抜けねば、坑の奥へは進めない。"
+    encounter: [lookout]
+    recon_free_first: true
+    on_win: gallery
+
+  gallery:
+    title: "横坑の分かれ"
+    text:
+      - "横坑は二手に分かれる。荷を積んだ広い運搬坑と、坑木の軋む狭い枝坑。奥からは、くぐもった話し声。"
+    choices:
+      - {key: rush, label: "運搬坑を突っ切る", next: haul}
+      - key: creep
+        label: "枝坑を闇伝いに忍ぶ【vit 判定 / 目標 8】"
+        check: {stat: vit, target: 8, tag: creep, recon_bonus: 2}
+        on_success: branch
+        on_failure: haul
+
+  branch:
+    title: "狭い枝坑"
+    text:
+      - "坑木の間を縫って進むと、荒くれの盗賊が一人、松明を掲げて振り返った。"
+    encounter: [thug]
+    on_win: deepvault
+
+  haul:
+    title: "運搬坑"
+    text:
+      - "積み荷の陰から、荒くれの盗賊が二人、同時に得物を構えて立ち上がる。"
+    encounter: [thug, thug]
+    on_win: deepvault
+
+  deepvault:
+    title: "風の通る間"
+    text:
+      - "最奥、風の抜ける広間。頭領が椅子代わりの木箱から立ち上がり、傍らの荒くれが身構える。奥の格子の中に、攫われた娘の影が見えた。右肩の下がる癖——写しの通りだ。"
+    encounter: [boss, thug]
+    on_win: escaped
+
+  escaped:
+    title: "夜明けの坑口"
+    text:
+      - "頭領は崩れ落ち、坑道に湿った静けさが戻った。H は娘の縄を解き、崩れ坑を辿って夜明けの斜面へ出る。宿場の灯を見下ろしながら、H だけが、掌に残る数値の余韻を見ていた。"
+    ending: clear
+
+  defeat:
+    title: "坑口の外で目覚め"
+    text:
+      - "気づくと、坑口の外の草叢だった。娘が H を引きずり出したらしい。傷は洗われ、息は整う。まだ、終わってはいない。"
+    on_defeat_return: village

@@ -24,6 +24,7 @@ from trpg_core.rng import Rng, d6  # noqa: E402
 from trpg_core.session import (  # noqa: E402
     GameState,
     REFERENCE_SEED7,
+    run_policy,
     run_scripted,
 )
 
@@ -151,6 +152,42 @@ def test_defeat_is_recoverable():
     state.hp = max(1, hp_max // 2)
     state.mp = state.mp_max
     assert state.hp == hp_max // 2 and state.mp == state.mp_max
+
+
+# ---------------------------------------------------------------------------
+# 8) 第2シナリオ（thief）: エンジン無変更で通しプレイでき、決定論であること
+#    scenarios/thief.yaml を差し替えるだけで別シナリオが走る証拠。
+# ---------------------------------------------------------------------------
+
+def test_thief_scenario_playable_and_deterministic():
+    build = ["map", "charm", "poultice"]
+    r1, s1 = run_policy(0, build, scenario_id="thief")
+    r2, s2 = run_policy(0, build, scenario_id="thief")
+    # 決定論: 同 seed・同ビルドは同一ログ
+    assert s1.log == s2.log, "thief が決定論的でない（同 seed でログ不一致）"
+    # 通しでエンディングに到達する（clear か defeat）
+    assert s1.log[-1]["type"] == "ending", "エンディングに到達していない"
+    assert r1 in ("clear", "defeat")
+    # seed=0 のこのビルドはクリアできる（勝てる設計＝通しプレイ可能の証拠）
+    assert r1 == "clear", f"thief seed=0 で clear するはず（got {r1}）"
+    # 別物のシナリオを読んでいる（goblin の敵ではない）
+    enemies = {e["enemies"][0] for e in s1.log if e["type"] == "encounter"}
+    assert enemies and enemies.isdisjoint({"sentry", "goblin", "chief"})
+
+
+def test_thief_save_load_rng():
+    # save/load が thief でも rng 内部状態込みで完全復元される
+    from trpg_core.scenario_loader import load_scenario
+    state = GameState(3, scenario=load_scenario("thief"))
+    for _ in range(4):
+        d6(state.rng)
+    snap = json.loads(json.dumps(state.snapshot(), ensure_ascii=False))
+    expected = [d6(state.rng) for _ in range(6)]
+    other = GameState(999, scenario=load_scenario("thief"))
+    other.restore(snap)
+    got = [d6(other.rng) for _ in range(6)]
+    assert got == expected, f"ロード後の乱数列が不一致 {got} != {expected}"
+    assert other.hp == state.hp and other.mp == state.mp
 
 
 def _run_all():

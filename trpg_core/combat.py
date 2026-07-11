@@ -20,12 +20,11 @@ HP 0 → 敗北（死なない。村で目覚め、HP 半分回復・MP 全快�
 
 from __future__ import annotations
 
-from .enemies import make_group
-from .rules import MP_COST, modifier, roll
+from .rules import MP_COST, modifier, roll, effect_hit_bonus, effect_damage_bonus
 from .rng import d6
-from .scenario import COMBAT_ENEMIES, FLEE_TARGET
 
-ENEMY_ATTACK_TARGET = 8  # 敵の命中目標値
+ENEMY_ATTACK_TARGET = 8  # 敵の命中目標値（戦闘の仕組み＝エンジン側の定数）
+FLEE_TARGET = 8          # 離脱判定の目標値（同上）
 
 
 def _first_alive(enemies):
@@ -35,17 +34,12 @@ def _first_alive(enemies):
     return None
 
 
-def _hit_bonus(state, target) -> int:
-    """命中への上乗せ（祝福・村長）。damage には乗らない（命中のみ）。"""
-    bonus = 1 if state.blessing else 0
-    if state.elder and target.key == "chief":
-        bonus += 2
-    return bonus
-
-
 def run_combat(state, node: str, controller, first_free_hit: bool = False) -> str:
-    """1 戦闘を最後まで回す。戻り値: "win" / "defeat" / "fled"。"""
-    enemies = make_group(COMBAT_ENEMIES[node])
+    """1 戦闘を最後まで回す。戻り値: "win" / "defeat" / "fled"。
+
+    敵編成はシナリオ（state.scenario）の当該ノードの encounter から組む。"""
+    sc = state.scenario
+    enemies = sc.make_group(sc.node(node).encounter)
     state.emit(type="encounter", node=node, enemies=[e.key for e in enemies])
     free_hit = first_free_hit
 
@@ -88,7 +82,7 @@ def run_combat(state, node: str, controller, first_free_hit: bool = False) -> st
             else:
                 base_ability = state.str
 
-            hitmod = modifier(base_ability) + _hit_bonus(state, target)
+            hitmod = modifier(base_ability) + effect_hit_bonus(state, target.key)
 
             if free_hit:
                 free_hit = False
@@ -103,7 +97,7 @@ def run_combat(state, node: str, controller, first_free_hit: bool = False) -> st
                 if kind == "magic":
                     dmg = d6(state.rng) + 3 + modifier(state.mag)
                 else:
-                    dmg = d6(state.rng) + modifier(state.str) + (2 if state.dagger else 0)
+                    dmg = d6(state.rng) + modifier(state.str) + effect_damage_bonus(state, "physical")
                 if crit:
                     dmg *= 2
                 dmg = max(1, dmg)

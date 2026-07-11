@@ -1,0 +1,134 @@
+# goblin.yaml — シナリオ「ゴブリン討伐」（データ）
+#
+# これは *データ* であってエンジンではない。ノード構造・選択肢・判定の目標値・
+# 敵ステータス・探索・効果の「宣言」だけを持つ。2D6 判定・乱数・戦闘解決・
+# 効果の「適用」は trpg_core（エンジン）側が行う。
+#
+# ※ このファイルの値（gain 文言・choice.label・敵ステータス・キャラ初期値）を
+#   変えると seed=7 の回帰ログが変わる。外部化はリファクタリングであり、値は不変。
+
+meta:
+  id: goblin
+  title: "ゴブリン討伐"
+  intro: "洞窟のゴブリンが家畜を襲う。頭目を討ってくれ。"
+
+character:                    # 開始時の H の状態（canon の max 値と一致）
+  hp: 20
+  mp: 10
+  attributes: {str: 8, mag: 8, vit: 9}
+
+village:                      # 探索フェーズ（options から pick_count 個選ぶ）
+  pick_count: 3
+  options:
+    - key: elder
+      name: "村長に詳しく聞く"
+      gain: "頭目への命中 +2"
+      text: "村長は囲炉裏の灰を掻き、頭目の癖を低く語る。「あれは右へ躱す。左を突け」——H の内心に、頭目への一手が刻まれる。"
+      effect: {type: hit_bonus, target_enemy: chief, value: 2}
+    - key: herbs
+      name: "薬草の女を訪ねる"
+      gain: "薬草 ×2（戦闘中に使用）"
+      text: "薬草の女は乾いた葉を二包み、H の掌に押しつける。「傷が深くなったら噛みなさい。苦いが、閉じる」。"
+      effect: {type: item, item: herb, count: 2}
+    - key: shrine
+      name: "古い祠に祈る"
+      gain: "祝福：全命中判定 +1"
+      text: "苔むした祠に手を合わせる。名も知れぬ古い神の気配が、H の指先をわずかに落ち着かせる——狙いが、ぶれにくくなる。"
+      effect: {type: hit_bonus, value: 1}
+    - key: well
+      name: "井戸を調べる"
+      gain: "錆びた短剣：物理ダメージ +2"
+      text: "涸れた井戸の底に、錆びた短剣が沈んでいた。刃こぼれてはいるが、素手よりはずっと深く届く。"
+      effect: {type: damage_bonus, kind: physical, value: 2}
+    - key: scout
+      name: "森を偵察する"
+      gain: "藪ルート自動成功 / 見張りへの初撃が必中"
+      text: "H は日暮れ前の森を一巡りする。藪の抜け道と、見張りの立つ角を覚えた。最初の一撃は、外さない。"
+      effect: {type: recon}     # 藪自動成功 + 見張り初撃必中 + 忍びの補正
+
+enemies:                      # 敵の定義（HP / 命中修正 / ダメージ範囲 / 命中目標値）
+  sentry: {name: "見張りゴブリン", hp: 5,  atk: 0, dmg: [1, 2], target: 6}
+  goblin: {name: "ゴブリン",       hp: 5,  atk: 0, dmg: [1, 2], target: 6}
+  chief:  {name: "ゴブリンの頭目", hp: 18, atk: 2, dmg: [2, 5], target: 8}
+
+start_node: forest
+
+nodes:
+  forest:
+    title: "森の道"
+    text:
+      - "村の柵を抜けると、森の道が二手に分かれていた。踏み固められた街道と、棘の藪に呑まれかけた細道。頭目の塒は、この森の奥の洞窟にあるという。"
+    choices:
+      - {key: road, label: "街道を行く", next: cave_entrance}
+      - key: bush
+        label: "藪を抜ける【vit 判定 / 目標 8】"
+        check: {stat: vit, target: 8, tag: sneak, recon_auto: true}
+        on_success: sneak_ok
+        on_failure: sneak_fail
+
+  sneak_ok:
+    title: "藪抜け・成功"
+    text:
+      - "藪を縫って、見張りの目を掠めた。棘が頬を裂いたが、誰にも見咎められていない。洞窟の入口は、もう目の前だ。"
+    choices:
+      - {key: cave, label: "洞窟へ", next: cave_entrance}
+
+  sneak_fail:
+    title: "藪抜け・失敗"
+    text:
+      - "藪で足を取られ、枝が高く鳴った。見張りが気配を探る——が、H は物陰へ滑り込む。露見はしていない。ともかく、洞窟の入口へ。"
+    choices:
+      - {key: cave, label: "洞窟へ", next: cave_entrance}
+
+  cave_entrance:
+    title: "洞窟の入口"
+    text:
+      - "洞窟の入口に、見張りのゴブリンが一体。松明の油煙が鼻をつく。抜けねば、奥へは進めない。"
+    encounter: [sentry]
+    recon_free_first: true      # 偵察があれば初撃必中
+    on_win: cave_hall
+
+  cave_hall:
+    title: "洞窟・広間"
+    text:
+      - "入口を抜けると、広間に出た。奥へ続く道は二つ——正面の開けた通路と、松明の列に沿った暗がり。"
+    choices:
+      - {key: front, label: "正面から進む", next: hall2}
+      - key: sneak
+        label: "松明を消して忍ぶ【vit 判定 / 目標 8】"
+        check: {stat: vit, target: 8, tag: vit_check, recon_bonus: 2}
+        on_success: hall1
+        on_failure: hall2
+
+  hall1:
+    title: "暗がりの道"
+    text:
+      - "暗がりを縫って進むと、ゴブリンが一体、こちらに気づいて牙を剥いた。"
+    encounter: [goblin]
+    on_win: depths
+
+  hall2:
+    title: "開けた通路"
+    text:
+      - "開けた通路の先、ゴブリンが二体、同時に立ち上がる。"
+    encounter: [goblin, goblin]
+    on_win: depths
+
+  depths:
+    title: "洞窟・最奥"
+    text:
+      - "最奥の広間。頭目が背の高い椅子から立ち上がり、傍らのゴブリンが身構える。村長の言葉が、H の内心を過ぎる——「あれは右へ躱す。左を突け」。"
+    encounter: [chief, goblin]
+    on_win: win
+
+  win:
+    title: "帰還"
+    text:
+      - "頭目は崩れ落ち、洞窟に静けさが戻った。H は夜の森を抜け、村の灯へ帰る。礼を言う村人たちの中で、H だけが、掌に残る数値の余韻を見ていた。"
+    ending: clear
+
+  defeat:
+    title: "村・広場で目覚め"
+    text:
+      - "気づくと、村の広場だった。誰かが H を運び戻したらしい。傷は浅く塞がれ、息が整う。まだ、終わってはいない。"
+    on_defeat_return: village

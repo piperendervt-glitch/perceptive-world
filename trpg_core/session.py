@@ -22,16 +22,8 @@ from collections import deque
 
 from .combat import run_combat
 from .rng import Rng
-from .rules import DEFAULT_CHAR, MP_COST, modifier, roll
-from .scenario import (
-    CAVE_HALL_CHOICES,
-    COMBAT_ENEMIES,
-    COMBAT_NEXT,
-    FOREST_CHOICES,
-    SNEAK_CONTINUE,
-    SNEAK_TARGET,
-    node_text,
-)
+from .rules import MP_COST, modifier, roll, has_recon
+from .scenario_loader import load_scenario
 
 # Windows console default cp932 chokes on CJK output; force UTF-8（resolve.py と同流儀）。
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -40,30 +32,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 
 LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
 RELOAD = "__reload__"
-
-
-# ---------------------------------------------------------------------------
-# キャラクター読み込み（canon/status.yaml は読むだけ。書き戻さない）
-# ---------------------------------------------------------------------------
-
-def load_character() -> dict:
-    """canon/status.yaml から H を読む（max を全快の初期値とする）。読めなければ DEFAULT_CHAR。"""
-    path = os.path.join(os.path.dirname(__file__), os.pardir, "canon", "status.yaml")
-    try:
-        import yaml  # 任意依存。無ければフォールバック。
-        with open(path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        h = data["characters"]["H"]
-        attrs = h["attributes"]
-        return {
-            "hp_max": int(h["hp"]["max"]),
-            "mp_max": int(h["mp"]["max"]),
-            "str": int(attrs["str"]),
-            "mag": int(attrs["mag"]),
-            "vit": int(attrs["vit"]),
-        }
-    except Exception:
-        return dict(DEFAULT_CHAR)
+DEFAULT_SCENARIO = "goblin"
 
 
 # ---------------------------------------------------------------------------
@@ -71,8 +40,12 @@ def load_character() -> dict:
 # ---------------------------------------------------------------------------
 
 class GameState:
-    def __init__(self, seed: int, char: dict | None = None):
-        char = char or load_character()
+    def __init__(self, seed: int, scenario=None):
+        # シナリオ（データ）を読む。char/敵/ノードはすべてここから来る。
+        if scenario is None:
+            scenario = load_scenario(DEFAULT_SCENARIO)
+        self.scenario = scenario
+        char = scenario.character
         self.seed = seed
         self.rng = Rng(seed)
         self.hp_max = char["hp_max"]
@@ -82,15 +55,13 @@ class GameState:
         self.str = char["str"]
         self.mag = char["mag"]
         self.vit = char["vit"]
-        # 探索で得るボーナス（I-4: H の内心にだけ映る）
-        self.elder = False       # 頭目への命中 +2
-        self.blessing = False    # 全命中 +1
-        self.dagger = False      # 物理ダメージ +2
-        self.scout = False       # 藪自動成功 / 見張り初撃必中
-        self.herbs = 0           # 薬草の数
+        # 探索で得る効果（I-4: H の内心にだけ映る）。宣言はシナリオ、適用はエンジン。
+        self.effects: list[dict] = []   # 受動効果（hit_bonus/damage_bonus/recon）の宣言
+        self.herbs = 0                  # 回復アイテム（item 効果を畳み込んだ数）
+        self.buff_labels: list[str] = []  # 内心表示用のラベル（ログには出ない）
         # 進行
         self.turn = 0
-        self.node = "forest"
+        self.node = scenario.start_node
         self.started = False
         self.respawn_on_defeat = False
         self.log: list[dict] = []
@@ -112,21 +83,20 @@ class GameState:
         seed/rng/turn/log/hp_max などの進行・再現要素は保持する。"""
         self.hp = self.hp_max
         self.mp = self.mp_max
-        self.elder = False
-        self.blessing = False
-        self.dagger = False
-        self.scout = False
+        self.effects = []
         self.herbs = 0
+        self.buff_labels = []
 
     # --- save/load（★rng の内部状態 a を含む＝ロード後の乱数列が一致する） ---
     _SNAP_FIELDS = (
         "seed", "hp_max", "mp_max", "hp", "mp", "str", "mag", "vit",
-        "elder", "blessing", "dagger", "scout", "herbs",
+        "effects", "herbs", "buff_labels",
         "turn", "node", "started", "respawn_on_defeat",
     )
 
     def snapshot(self) -> dict:
         snap = {k: getattr(self, k) for k in self._SNAP_FIELDS}
+        snap["scenario_id"] = self.scenario.id   # 参照用（restore は既存 scenario を使う）
         snap["rng_a"] = self.rng.state()
         return snap
 
@@ -190,114 +160,130 @@ class PolicyController:
 # セッションフロー（決定論・ノードグラフを歩く）
 # ---------------------------------------------------------------------------
 
+def _goto(state: GameState, node_id: str) -> None:
+    """遷移先へ移り、enter_node を刻む（ノード進入はすべてここを通す）。"""
+    state.node = node_id
+    state.emit(type="enter_node", node=node_id)
+
+
+def _run_village(state: GameState, controller) -> None:
+    """探索フェーズ（出立前／敗北後の再起）。controller が pick を供給する。"""
+    from . import village
+    for key in controller.explores():
+        village.explore(state, key)
+
+
+def _resolve_check(state: GameState, check: dict) -> bool:
+    """判定つき遷移の判定を解く。check の宣言をエンジンが解釈する。
+    recon_auto: 偵察があれば振らずに自動成功。recon_bonus: 偵察があれば修正に加算。"""
+    stat = check["stat"]
+    target = int(check["target"])
+    tag = check.get("tag", stat)
+    if check.get("recon_auto") and has_recon(state):
+        state.emit(type="check", tag=tag, auto=True, success=True)
+        return True
+    mod = modifier(getattr(state, stat))
+    if check.get("recon_bonus") and has_recon(state):
+        mod += int(check["recon_bonus"])
+    rr = roll(state.rng, mod, target)
+    state.emit(type="check", tag=tag, **rr)
+    return rr["success"]
+
+
+def _handle_decision(state: GameState, controller, node) -> str | None:
+    """決定ノードを 1 手進める。RELOAD ならそれを返し、それ以外は None。"""
+    key = controller.choice(node.id, [c.key for c in node.choices])
+    if key == RELOAD:
+        return RELOAD
+    state.turn += 1
+    choice = next(c for c in node.choices if c.key == key)
+    state.emit(type="choice", node=node.id, label=choice.label)
+    if choice.check:
+        ok = _resolve_check(state, choice.check)
+        dest = choice.on_success if ok else choice.on_failure
+    else:
+        dest = choice.next
+    _goto(state, dest)
+    return None
+
+
+def _handle_combat(state: GameState, controller, node) -> str | None:
+    """戦闘ノードを解決する。終局なら "clear"/"defeat" を、継続なら None を返す。"""
+    sc = state.scenario
+    first_free = node.recon_free_first and has_recon(state)
+    res = run_combat(state, node.id, controller, first_free_hit=first_free)
+    if res == "win":
+        _goto(state, node.on_win)
+        dest = sc.node(node.on_win)
+        if dest.kind == "ending" and dest.ending:
+            state.emit(type="ending", result=dest.ending)
+            return dest.ending
+        return None
+    if res == "fled":
+        _goto(state, sc.start_node)
+        return None
+    # defeat
+    if state.respawn_on_defeat:
+        # 崩れ落ちる描写は combat の defeat イベントで presenter が出す。
+        # HP 半分では詰みうるので全快とし、村の探索フェーズからやり直す（死なない設計）。
+        state.reset_for_village()
+        state.emit(type="respawn", hp=state.hp, mp=state.mp)
+        _run_village(state, controller)      # 探索を選び直す（on_defeat_return: village）
+        state.turn += 1
+        _goto(state, sc.start_node)
+        return None
+    state.emit(type="ending", result="defeat")
+    return "defeat"
+
+
 def run_session(state: GameState, controller) -> str:
-    """フローを最後まで回す。戻り値: "clear" / "defeat"（respawn 時は defeat を返さず継続）。"""
+    """シナリオのノードグラフを歩く。戻り値: "clear" / "defeat"。
+
+    ノード種別（decision / combat / ending）で分岐するだけの汎用ループ。
+    ノードの中身・遷移・敵・判定目標はすべてシナリオ(state.scenario)から来る。"""
+    sc = state.scenario
     if not state.started:
         state.started = True
         state.emit(type="session_start", seed=state.seed)
-        from . import village
-        for k in controller.explores():
-            village.explore(state, k)
+        _run_village(state, controller)
         state.turn += 1
-        state.emit(type="enter_node", node="forest")
-        state.node = "forest"
+        _goto(state, sc.start_node)
 
     while True:
-        node = state.node
-
-        if node == "forest":
-            key = controller.choice("forest", [c[0] for c in FOREST_CHOICES])
-            if key == RELOAD:
+        node = sc.node(state.node)
+        if node.kind == "decision":
+            if _handle_decision(state, controller, node) == RELOAD:
                 continue
-            state.turn += 1
-            state.emit(type="choice", node="forest", label=dict(FOREST_CHOICES)[key])
-            if key == "bush":
-                if state.scout:
-                    state.emit(type="check", tag="sneak", auto=True, success=True)
-                    state.node = "sneak_ok"
-                else:
-                    rr = roll(state.rng, modifier(state.vit), SNEAK_TARGET)
-                    state.emit(type="check", tag="sneak", **rr)
-                    state.node = "sneak_ok" if rr["success"] else "sneak_fail"
-                state.emit(type="enter_node", node=state.node)
-            else:  # road
-                state.emit(type="enter_node", node="cave_entrance")
-                state.node = "cave_entrance"
-
-        elif node in ("sneak_ok", "sneak_fail"):
-            key = controller.choice(node, ["cave"])
-            if key == RELOAD:
-                continue
-            state.turn += 1
-            state.emit(type="choice", node=node, label=SNEAK_CONTINUE[0][1])
-            state.emit(type="enter_node", node="cave_entrance")
-            state.node = "cave_entrance"
-
-        elif node == "cave_hall":
-            key = controller.choice("cave_hall", [c[0] for c in CAVE_HALL_CHOICES])
-            if key == RELOAD:
-                continue
-            state.turn += 1
-            state.emit(type="choice", node="cave_hall", label=dict(CAVE_HALL_CHOICES)[key])
-            if key == "sneak":
-                mod = modifier(state.vit) + (2 if state.scout else 0)
-                rr = roll(state.rng, mod, SNEAK_TARGET)
-                state.emit(type="check", tag="vit_check", **rr)
-                state.node = "hall1" if rr["success"] else "hall2"
-            else:  # front
-                state.node = "hall2"
-            state.emit(type="enter_node", node=state.node)
-
-        elif node in COMBAT_ENEMIES:  # cave_entrance / hall1 / hall2 / depths
-            first_free = state.scout and node == "cave_entrance"
-            res = run_combat(state, node, controller, first_free_hit=first_free)
-            if res == "win":
-                nxt = COMBAT_NEXT[node]
-                if nxt == "win":
-                    state.emit(type="enter_node", node="win")
-                    state.emit(type="ending", result="clear")
-                    return "clear"
-                state.emit(type="enter_node", node=nxt)
-                state.node = nxt
-            elif res == "fled":
-                state.emit(type="enter_node", node="forest")
-                state.node = "forest"
-            else:  # defeat
-                if state.respawn_on_defeat:
-                    # 崩れ落ちる描写は combat の defeat イベントで presenter が出す。
-                    # Fix3: HP 半分では詰みうるので全快とし、村の探索フェーズからやり直す。
-                    # ペナルティは「探索をやり直す手間」と「一度負けた」事実に留める（死なない設計）。
-                    state.reset_for_village()
-                    state.emit(type="respawn", hp=state.hp, mp=state.mp)
-                    from . import village
-                    for k in controller.explores():   # 探索を 3 つ選び直す
-                        village.explore(state, k)
-                    state.turn += 1
-                    state.emit(type="enter_node", node="forest")
-                    state.node = "forest"
-                else:
-                    state.emit(type="ending", result="defeat")
-                    return "defeat"
+        elif node.kind == "combat":
+            res = _handle_combat(state, controller, node)
+            if res:
+                return res
+        elif node.kind == "ending":
+            # 決定ノードから直接エンディングへ来た場合（combat 経由は上で return 済み）。
+            result = node.ending or "clear"
+            state.emit(type="ending", result=result)
+            return result
         else:
-            raise RuntimeError(f"未知のノード: {node}")
+            raise RuntimeError(f"未知のノード種別: {node.kind}（{node.id}）")
 
 
 # ---------------------------------------------------------------------------
 # ヘッドレス実行のヘルパ
 # ---------------------------------------------------------------------------
 
-def run_scripted(seed, explores, node_choices, combat_cmds, respawn=False) -> GameState:
+def run_scripted(seed, explores, node_choices, combat_cmds, respawn=False,
+                 scenario_id=DEFAULT_SCENARIO) -> GameState:
     """入力列を再生してログを生成する（回帰・検証用）。"""
-    state = GameState(seed)
+    state = GameState(seed, scenario=load_scenario(scenario_id))
     state.respawn_on_defeat = respawn
     controller = ScriptedController(explores, node_choices, combat_cmds)
     run_session(state, controller)
     return state
 
 
-def run_policy(seed, build) -> tuple[str, GameState]:
+def run_policy(seed, build, scenario_id=DEFAULT_SCENARIO) -> tuple[str, GameState]:
     """方針でヘッドレス自動プレイ（simulate 用）。"""
-    state = GameState(seed)
+    state = GameState(seed, scenario=load_scenario(scenario_id))
     state.respawn_on_defeat = False
     controller = PolicyController(build)
     result = run_session(state, controller)
@@ -328,8 +314,9 @@ class ConsoleController:
 
     # --- 探索フェーズ（対話・敗北後もここに戻る＝Fix3） ---
     def explores(self):
+        sc = self.state.scenario
         print()
-        print("  ── 村 —— 森へ発つ前に、3 つ支度する（5 つから選ぶ）──")
+        print(f"  ── 支度 —— 出立の前に、{len(sc.village_order)} つから {sc.village_pick_count} つ選ぶ ──")
         return list_explore_and_pick(self)
 
     # --- 判定・戦闘の結果表示（Fix1）／敗北描写（Fix2） ---
@@ -360,12 +347,12 @@ class ConsoleController:
             print("  ——まだ、終わってはいない。もう一度、森へ。")
 
     def _show_encounter(self, ev):
-        from .enemies import enemy_name
+        sc = self.state.scenario
         print()
-        txt = node_text(ev["node"])
+        txt = sc.node_text(ev["node"])
         if txt:
             print(f"  {txt}")
-        names = "／".join(enemy_name(k) for k in ev["enemies"])
+        names = "／".join(sc.enemy_name(k) for k in ev["enemies"])
         print(f"  ▼ 戦闘 —— {names}")
 
     def _show_check(self, ev):
@@ -401,17 +388,15 @@ class ConsoleController:
               f"→ {ev['total']} vs 目標{ev['target']} → {result}")
 
     def _show_player_attack(self, ev):
-        from .enemies import enemy_name
         if ev.get("damage", 0) > 0:
             crit = "（会心！）" if ev.get("crit") else ""
-            print(f"     → {enemy_name(ev['target'])} に {ev['damage']} ダメージ{crit}"
+            print(f"     → {self.state.scenario.enemy_name(ev['target'])} に {ev['damage']} ダメージ{crit}"
                   f"（残 HP {ev['enemy_hp']}）")
         # 外れは check 行が「外れ」と出しているので、ここでは重ねない。
 
     def _show_enemy_attack(self, ev):
-        from .enemies import enemy_name
         d = ev["dice"]
-        name = enemy_name(ev["enemy"])
+        name = self.state.scenario.enemy_name(ev["enemy"])
         if ev["hit"]:
             print(f"     {name} の攻撃 [{d[0]},{d[1]}]={ev['total']} "
                   f"→ {ev['damage']} ダメージを受けた（HP {ev['player_hp']}）")
@@ -424,12 +409,7 @@ class ConsoleController:
         print("  ── H の内心（転生者にだけ見える数値・I-4）──")
         print(f"     HP {s.hp}/{s.hp_max}   MP {s.mp}/{s.mp_max}   薬草 {s.herbs}")
         print(f"     str {s.str}(+{modifier(s.str)})  mag {s.mag}(+{modifier(s.mag)})  vit {s.vit}(+{modifier(s.vit)})")
-        buffs = []
-        if s.elder: buffs.append("村長の助言(頭目命中+2)")
-        if s.blessing: buffs.append("祝福(命中+1)")
-        if s.dagger: buffs.append("錆びた短剣(物理+2)")
-        if s.scout: buffs.append("偵察(藪自動/初撃必中)")
-        print(f"     授かり: {', '.join(buffs) if buffs else 'なし'}")
+        print(f"     授かり: {', '.join(s.buff_labels) if s.buff_labels else 'なし'}")
 
     def _save(self, name):
         os.makedirs(self.save_dir, exist_ok=True)
@@ -467,9 +447,13 @@ class ConsoleController:
         return None
 
     def choice(self, node, options):
+        sc = self.state.scenario
+        n = sc.node(node)
         print()
-        print(node_text(node))
-        labels = self._labels(node, options)
+        txt = sc.node_text(node)
+        if txt:
+            print(txt)
+        labels = [(c.key, c.label) for c in n.choices]
         while True:
             for i, (_k, lbl) in enumerate(labels, 1):
                 print(f"  {i}) {lbl}")
@@ -514,54 +498,52 @@ class ConsoleController:
                 continue
             print("  用意されたコマンドから選ぶ。")
 
-    @staticmethod
-    def _labels(node, options):
-        table = {}
-        table.update(dict(FOREST_CHOICES))
-        table.update({k: v for k, v in SNEAK_CONTINUE})
-        table.update(dict(CAVE_HALL_CHOICES))
-        return [(k, table.get(k, k)) for k in options]
 
-
-def play_interactive(seed: int):
-    state = GameState(seed)
+def play_interactive(seed: int, scenario_id: str = DEFAULT_SCENARIO):
+    scenario = load_scenario(scenario_id)
+    state = GameState(seed, scenario=scenario)
     state.respawn_on_defeat = True
     save_dir = os.path.join(LOG_DIR, "saves")
     controller = ConsoleController(state, save_dir)  # ← ここで presenter を装着
     print("=" * 60)
-    print(f"  Ordia — 決定論 TRPG（seed={seed}・LLM 不使用）")
+    print(f"  Ordia — {scenario.title}（seed={seed}・LLM 不使用）")
     print("=" * 60)
+    if scenario.intro:
+        print(scenario.intro)
     # 探索フェーズは run_session が controller.explores() を呼んで進める
     # （敗北後もそこへ戻る＝Fix3）。番号で選ぶ。
     result = run_session(state, controller)
     print()
-    print(node_text("win" if result == "clear" else "defeat"))
+    print(scenario.ending_text(result))
     print(f"\n>>> 結果: {result}")
     path = write_log(state)
     print(f">>> ログ: {path}")
 
 
 def list_explore_and_pick(controller: ConsoleController):
-    from .village import EXPLORE, EXPLORE_ORDER
+    sc = controller.state.scenario
+    order = sc.village_order
+    pick_count = sc.village_pick_count
     picked = []
-    while len(picked) < 3:
-        print(f"\n  ── 探索 {len(picked)+1}/3 ──")
-        for i, k in enumerate(EXPLORE_ORDER, 1):
-            mark = "（選択済）" if k in picked else ""
-            print(f"  {i}) {EXPLORE[k]['name']} — {EXPLORE[k]['gain']} {mark}")
+    while len(picked) < pick_count:
+        print(f"\n  ── 支度 {len(picked)+1}/{pick_count} ──")
+        for i, key in enumerate(order, 1):
+            opt = sc.village_option(key)
+            mark = "（選択済）" if key in picked else ""
+            print(f"  {i}) {opt['name']} — {opt.get('gain', '')} {mark}")
         raw = input("> ").strip()
         meta = controller._meta(raw)
         if meta == "quit":
             sys.exit(0)
         if meta == "handled":
             continue
-        if raw.isdigit() and 1 <= int(raw) <= len(EXPLORE_ORDER):
-            k = EXPLORE_ORDER[int(raw) - 1]
-            if k in picked:
+        if raw.isdigit() and 1 <= int(raw) <= len(order):
+            key = order[int(raw) - 1]
+            if key in picked:
                 print("  それは選択済み。")
                 continue
-            picked.append(k)
-            print(f"  → {EXPLORE[k]['text']}")
+            picked.append(key)
+            print(f"  → {sc.village_option(key).get('text', '')}")
         else:
             print("  番号で選ぶ。")
     return picked
@@ -583,17 +565,21 @@ REFERENCE_SEED7 = {
 def main(argv):
     ap = argparse.ArgumentParser(description="決定論 TRPG セッション（LLM 不使用）。")
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--scenario", default=DEFAULT_SCENARIO,
+                    help="scenarios/<id>.yaml を選ぶ（既定: goblin）")
     ap.add_argument("--replay", action="store_true", help="seed=7 の参照入力列を自動再生してログ出力")
     args = ap.parse_args(argv)
 
     if args.replay:
         ref = REFERENCE_SEED7
-        state = run_scripted(ref["seed"], ref["explores"], ref["node_choices"], ref["combat_cmds"])
+        state = run_scripted(ref["seed"], ref["explores"], ref["node_choices"],
+                             ref["combat_cmds"], scenario_id=args.scenario)
         path = write_log(state)
-        print(f"replay seed={ref['seed']} → {path}（{len(state.log)} events, ending={state.log[-1].get('result')}）")
+        print(f"replay seed={ref['seed']} scenario={args.scenario} → {path}"
+              f"（{len(state.log)} events, ending={state.log[-1].get('result')}）")
         return 0
 
-    play_interactive(args.seed)
+    play_interactive(args.seed, scenario_id=args.scenario)
     return 0
 
 
