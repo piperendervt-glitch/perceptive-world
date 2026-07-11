@@ -1,0 +1,534 @@
+{
+ "scenario": "goblin",
+ "seed": 7,
+ "inputs": [
+  "explore:elder",
+  "explore:herbs",
+  "explore:scout",
+  "choice:藪を抜ける【vit 判定 / 目標 8】",
+  "choice:洞窟へ",
+  "combat:attack",
+  "choice:松明を消して忍ぶ【vit 判定 / 目標 8】",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack",
+  "combat:magic",
+  "combat:magic",
+  "combat:magic",
+  "combat:magic",
+  "combat:magic"
+ ],
+ "expected_log": [
+  {
+   "t": 0,
+   "type": "session_start",
+   "seed": 7
+  },
+  {
+   "t": 0,
+   "type": "explore",
+   "place": "elder",
+   "gain": "頭目への命中 +2"
+  },
+  {
+   "t": 0,
+   "type": "explore",
+   "place": "herbs",
+   "gain": "薬草 ×2（戦闘中に使用）"
+  },
+  {
+   "t": 0,
+   "type": "explore",
+   "place": "scout",
+   "gain": "藪ルート自動成功 / 見張りへの初撃が必中"
+  },
+  {
+   "t": 1,
+   "type": "enter_node",
+   "node": "forest"
+  },
+  {
+   "t": 2,
+   "type": "choice",
+   "node": "forest",
+   "label": "藪を抜ける【vit 判定 / 目標 8】"
+  },
+  {
+   "t": 2,
+   "type": "check",
+   "tag": "sneak",
+   "auto": true,
+   "success": true
+  },
+  {
+   "t": 2,
+   "type": "enter_node",
+   "node": "sneak_ok"
+  },
+  {
+   "t": 3,
+   "type": "choice",
+   "node": "sneak_ok",
+   "label": "洞窟へ"
+  },
+  {
+   "t": 3,
+   "type": "enter_node",
+   "node": "cave_entrance"
+  },
+  {
+   "t": 3,
+   "type": "encounter",
+   "node": "cave_entrance",
+   "enemies": [
+    "sentry"
+   ]
+  },
+  {
+   "t": 5,
+   "type": "check",
+   "tag": "free_hit",
+   "auto": true,
+   "success": true
+  },
+  {
+   "t": 5,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "sentry",
+   "damage": 5,
+   "crit": false,
+   "enemy_hp": 0
+  },
+  {
+   "t": 5,
+   "type": "combat_win",
+   "node": "cave_entrance"
+  },
+  {
+   "t": 5,
+   "type": "enter_node",
+   "node": "cave_hall"
+  },
+  {
+   "t": 6,
+   "type": "choice",
+   "node": "cave_hall",
+   "label": "松明を消して忍ぶ【vit 判定 / 目標 8】"
+  },
+  {
+   "t": 6,
+   "type": "check",
+   "tag": "vit_check",
+   "dice": [
+    4,
+    3
+   ],
+   "sum": 7,
+   "modifier": 3,
+   "total": 10,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 6,
+   "type": "enter_node",
+   "node": "hall1"
+  },
+  {
+   "t": 6,
+   "type": "encounter",
+   "node": "hall1",
+   "enemies": [
+    "goblin"
+   ]
+  },
+  {
+   "t": 7,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    3,
+    2
+   ],
+   "sum": 5,
+   "modifier": 0,
+   "total": 5,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": false
+  },
+  {
+   "t": 7,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "goblin",
+   "damage": 0,
+   "fumble": false
+  },
+  {
+   "t": 7,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    4,
+    5
+   ],
+   "total": 9,
+   "hit": true,
+   "damage": 1,
+   "player_hp": 19
+  },
+  {
+   "t": 8,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    1,
+    5
+   ],
+   "sum": 6,
+   "modifier": 0,
+   "total": 6,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 8,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "goblin",
+   "damage": 4,
+   "crit": false,
+   "enemy_hp": 1
+  },
+  {
+   "t": 8,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    2,
+    3
+   ],
+   "total": 5,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 19
+  },
+  {
+   "t": 10,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    2,
+    4
+   ],
+   "sum": 6,
+   "modifier": 0,
+   "total": 6,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 10,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "goblin",
+   "damage": 2,
+   "crit": false,
+   "enemy_hp": 0
+  },
+  {
+   "t": 10,
+   "type": "combat_win",
+   "node": "hall1"
+  },
+  {
+   "t": 10,
+   "type": "enter_node",
+   "node": "depths"
+  },
+  {
+   "t": 10,
+   "type": "encounter",
+   "node": "depths",
+   "enemies": [
+    "chief",
+    "goblin"
+   ]
+  },
+  {
+   "t": 11,
+   "type": "mp_cost",
+   "cost": 2,
+   "mp": 8,
+   "cause": "魔法発動 (I-2)"
+  },
+  {
+   "t": 11,
+   "type": "check",
+   "tag": "magic_attack",
+   "dice": [
+    6,
+    2
+   ],
+   "sum": 8,
+   "modifier": 2,
+   "total": 10,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 11,
+   "type": "player_attack",
+   "kind": "magic",
+   "target": "chief",
+   "damage": 9,
+   "crit": false,
+   "enemy_hp": 9
+  },
+  {
+   "t": 11,
+   "type": "enemy_attack",
+   "enemy": "chief",
+   "dice": [
+    2,
+    1
+   ],
+   "total": 5,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 19
+  },
+  {
+   "t": 11,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    1,
+    2
+   ],
+   "total": 3,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 19
+  },
+  {
+   "t": 12,
+   "type": "mp_cost",
+   "cost": 2,
+   "mp": 6,
+   "cause": "魔法発動 (I-2)"
+  },
+  {
+   "t": 12,
+   "type": "check",
+   "tag": "magic_attack",
+   "dice": [
+    4,
+    5
+   ],
+   "sum": 9,
+   "modifier": 2,
+   "total": 11,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 12,
+   "type": "player_attack",
+   "kind": "magic",
+   "target": "chief",
+   "damage": 4,
+   "crit": false,
+   "enemy_hp": 5
+  },
+  {
+   "t": 12,
+   "type": "enemy_attack",
+   "enemy": "chief",
+   "dice": [
+    6,
+    4
+   ],
+   "total": 12,
+   "hit": true,
+   "damage": 4,
+   "player_hp": 15
+  },
+  {
+   "t": 12,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    5,
+    6
+   ],
+   "total": 11,
+   "hit": true,
+   "damage": 2,
+   "player_hp": 13
+  },
+  {
+   "t": 13,
+   "type": "mp_cost",
+   "cost": 2,
+   "mp": 4,
+   "cause": "魔法発動 (I-2)"
+  },
+  {
+   "t": 13,
+   "type": "check",
+   "tag": "magic_attack",
+   "dice": [
+    6,
+    5
+   ],
+   "sum": 11,
+   "modifier": 2,
+   "total": 13,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 13,
+   "type": "player_attack",
+   "kind": "magic",
+   "target": "chief",
+   "damage": 4,
+   "crit": false,
+   "enemy_hp": 1
+  },
+  {
+   "t": 13,
+   "type": "enemy_attack",
+   "enemy": "chief",
+   "dice": [
+    2,
+    3
+   ],
+   "total": 7,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 13
+  },
+  {
+   "t": 13,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    3,
+    1
+   ],
+   "total": 4,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 13
+  },
+  {
+   "t": 14,
+   "type": "mp_cost",
+   "cost": 2,
+   "mp": 2,
+   "cause": "魔法発動 (I-2)"
+  },
+  {
+   "t": 14,
+   "type": "check",
+   "tag": "magic_attack",
+   "dice": [
+    1,
+    5
+   ],
+   "sum": 6,
+   "modifier": 2,
+   "total": 8,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 14,
+   "type": "player_attack",
+   "kind": "magic",
+   "target": "chief",
+   "damage": 6,
+   "crit": false,
+   "enemy_hp": 0
+  },
+  {
+   "t": 14,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    3,
+    3
+   ],
+   "total": 6,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 13
+  },
+  {
+   "t": 16,
+   "type": "mp_cost",
+   "cost": 2,
+   "mp": 0,
+   "cause": "魔法発動 (I-2)"
+  },
+  {
+   "t": 16,
+   "type": "check",
+   "tag": "magic_attack",
+   "dice": [
+    6,
+    5
+   ],
+   "sum": 11,
+   "modifier": 0,
+   "total": 11,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 16,
+   "type": "player_attack",
+   "kind": "magic",
+   "target": "goblin",
+   "damage": 8,
+   "crit": false,
+   "enemy_hp": 0
+  },
+  {
+   "t": 16,
+   "type": "combat_win",
+   "node": "depths"
+  },
+  {
+   "t": 16,
+   "type": "enter_node",
+   "node": "win"
+  },
+  {
+   "t": 16,
+   "type": "ending",
+   "result": "clear"
+  }
+ ]
+}

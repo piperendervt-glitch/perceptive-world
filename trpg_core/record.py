@@ -1,0 +1,161 @@
+"""record.py — セッションを「シナリオ+入力列+ログ」のフィクスチャに録画する.
+
+用途:
+  1. 型付き入力ファイルから録画:
+       python -m trpg_core.record --scenario goblin --seed 7 --inputs in.txt --out fx.json
+     （in.txt は 1 行 1 入力。explore:elder / choice:藪を抜ける / combat:attack ...）
+  2. 対話プレイを録画:
+       python -m trpg_core.record --scenario goblin --seed 7 --play --out fx.json
+     （実際に遊んだ入力と結果ログをそのままフィクスチャ化）
+
+録画したフィクスチャは trpg_core.replay で再生・検証できる（決定論なので完全一致するはず）。
+LLM は一切呼ばない。
+
+Step 3（GM を LLM 化）で、ここで録ったフィクスチャを replay(mode="state") にかければ、
+描写が変わってもゲーム状態イベントが不変であることを検証できる（replay.py 参照）。
+"""
+
+from __future__ import annotations
+
+import argparse
+import io
+import json
+import os
+import sys
+
+from .replay import FixtureController
+
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
+FIXTURE_DIR = os.path.join(os.path.dirname(__file__), os.pardir, "tests", "fixtures")
+
+
+class RecordingController:
+    """任意の base コントローラをラップし、供給された入力を型付きで記録する。
+
+    run_session が pull した入力（探索 key / 選択 / 戦闘コマンド）をそのまま録る。
+    choice は人が読める **ラベル** で記録する（replay 側は key/ラベル/部分一致で解決）。
+    """
+
+    def __init__(self, base, scenario):
+        self.base = base
+        self.scenario = scenario
+        self.inputs: list[str] = []
+
+    def explores(self):
+        keys = list(self.base.explores())
+        self.inputs.extend(f"explore:{k}" for k in keys)
+        return keys
+
+    def choice(self, node, options):
+        key = self.base.choice(node, options)
+        self.inputs.append(f"choice:{self._label(node, key)}")
+        return key
+
+    def combat_command(self, state, enemies):
+        cmd = self.base.combat_command(state, enemies)
+        self.inputs.append(f"combat:{cmd}")
+        return cmd
+
+    def _label(self, node, key):
+        for c in self.scenario.node(node).choices:
+            if c.key == key:
+                return c.label
+        return key
+
+
+def _new_state(scenario_id: str, seed: int, respawn: bool):
+    from .session import GameState
+    from .scenario_loader import load_scenario
+    state = GameState(seed, scenario=load_scenario(scenario_id))
+    state.respawn_on_defeat = respawn
+    return state
+
+
+def build_fixture(scenario_id: str, seed: int, base_controller, respawn=False) -> dict:
+    """base_controller でセッションを走らせ、入力列と結果ログを録ってフィクスチャ化する。"""
+    from .session import run_session
+    state = _new_state(scenario_id, seed, respawn)
+    rec = RecordingController(base_controller, state.scenario)
+    run_session(state, rec)
+    fixture = {"scenario": scenario_id, "seed": seed, "inputs": rec.inputs,
+               "expected_log": state.log}
+    if respawn:
+        fixture["respawn"] = True
+    return fixture
+
+
+def fixture_from_inputs(scenario_id: str, seed: int, inputs, respawn=False) -> dict:
+    """既にある型付き入力列からフィクスチャを生成（expected_log を再生成）。"""
+    from .session import run_session
+    state = _new_state(scenario_id, seed, respawn)
+    run_session(state, FixtureController(inputs, state.scenario))
+    fixture = {"scenario": scenario_id, "seed": seed, "inputs": list(inputs),
+               "expected_log": state.log}
+    if respawn:
+        fixture["respawn"] = True
+    return fixture
+
+
+def save_fixture(fixture: dict, path: str) -> str:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(fixture, f, ensure_ascii=False, indent=1)
+    return path
+
+
+def _record_interactive(scenario_id: str, seed: int) -> dict:
+    """対話プレイを録画する（ConsoleController をラップ）。"""
+    from .session import GameState, ConsoleController, run_session, LOG_DIR
+    from .scenario_loader import load_scenario
+    scenario = load_scenario(scenario_id)
+    state = GameState(seed, scenario=scenario)
+    state.respawn_on_defeat = True
+    console = ConsoleController(state, os.path.join(LOG_DIR, "saves"))
+    rec = RecordingController(console, scenario)
+    print("=" * 60)
+    print(f"  録画モード — {scenario.title}（seed={seed}）")
+    print("=" * 60)
+    if scenario.intro:
+        print(scenario.intro)
+    result = run_session(state, rec)
+    print()
+    print(scenario.ending_text(result))
+    print(f"\n>>> 結果: {result}")
+    fixture = {"scenario": scenario_id, "seed": seed, "inputs": rec.inputs,
+               "expected_log": state.log}
+    if state.respawn_on_defeat:
+        # respawn が実際に起きたかは inputs/ログから判断できるが、既定 True で保存しても
+        # 再生時に defeat しなければ無影響。明示のため付けておく。
+        fixture["respawn"] = True
+    return fixture
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(description="セッションをフィクスチャに録画する（LLM 不使用）。")
+    ap.add_argument("--scenario", default="goblin")
+    ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--inputs", help="型付き入力ファイル（1 行 1 入力）。省略時は --play")
+    ap.add_argument("--play", action="store_true", help="対話プレイを録画する")
+    ap.add_argument("--out", help="出力パス（省略時は tests/fixtures/<scenario>_seed<seed>.json）")
+    args = ap.parse_args(argv)
+
+    out = args.out or os.path.join(FIXTURE_DIR, f"{args.scenario}_seed{args.seed}.json")
+
+    if args.play or not args.inputs:
+        fixture = _record_interactive(args.scenario, args.seed)
+    else:
+        with open(args.inputs, "r", encoding="utf-8") as f:
+            inputs = [ln.strip() for ln in f if ln.strip() and not ln.lstrip().startswith("#")]
+        fixture = fixture_from_inputs(args.scenario, args.seed, inputs)
+
+    path = save_fixture(fixture, out)
+    print(f"録画 → {path}（scenario={fixture['scenario']} seed={fixture['seed']}, "
+          f"{len(fixture['inputs'])} inputs, {len(fixture['expected_log'])} events）")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
