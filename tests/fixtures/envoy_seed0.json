@@ -1,0 +1,121 @@
+{
+ "scenario": "envoy",
+ "seed": 0,
+ "inputs": [
+  "explore:rapport",
+  "explore:guard",
+  "choice:双方の言い分を見立てて説く【mag 判定 / 目標 8：弁舌】",
+  "choice:激昂を鎮める【mag 判定 / 目標 9】",
+  "choice:折衷案で手を打たせる【mag 判定 / 目標 8：説得】"
+ ],
+ "expected_log": [
+  {
+   "t": 0,
+   "type": "session_start",
+   "seed": 0
+  },
+  {
+   "t": 0,
+   "type": "explore",
+   "place": "rapport",
+   "gain": "交渉判定 +2（下調べの分）/ 決裂して斬られかけても初撃を見切る"
+  },
+  {
+   "t": 0,
+   "type": "explore",
+   "place": "guard",
+   "gain": "決裂時、全命中判定 +1"
+  },
+  {
+   "t": 1,
+   "type": "enter_node",
+   "node": "table"
+  },
+  {
+   "t": 2,
+   "type": "choice",
+   "node": "table",
+   "label": "双方の言い分を見立てて説く【mag 判定 / 目標 8：弁舌】"
+  },
+  {
+   "t": 2,
+   "type": "check",
+   "tag": "insight",
+   "dice": [
+    2,
+    1
+   ],
+   "sum": 3,
+   "modifier": 2,
+   "total": 5,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": false
+  },
+  {
+   "t": 2,
+   "type": "enter_node",
+   "node": "heated"
+  },
+  {
+   "t": 3,
+   "type": "choice",
+   "node": "heated",
+   "label": "激昂を鎮める【mag 判定 / 目標 9】"
+  },
+  {
+   "t": 3,
+   "type": "check",
+   "tag": "soothe",
+   "dice": [
+    3,
+    4
+   ],
+   "sum": 7,
+   "modifier": 2,
+   "total": 9,
+   "target": 9,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 3,
+   "type": "enter_node",
+   "node": "proposal"
+  },
+  {
+   "t": 4,
+   "type": "choice",
+   "node": "proposal",
+   "label": "折衷案で手を打たせる【mag 判定 / 目標 8：説得】"
+  },
+  {
+   "t": 4,
+   "type": "check",
+   "tag": "settle",
+   "dice": [
+    4,
+    4
+   ],
+   "sum": 8,
+   "modifier": 2,
+   "total": 10,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 4,
+   "type": "enter_node",
+   "node": "accord"
+  },
+  {
+   "t": 4,
+   "type": "ending",
+   "result": "accord"
+  }
+ ]
+}

@@ -1,0 +1,174 @@
+# envoy.yaml — シナリオ「争う二つの集落の仲裁」（カテゴリC：対話・社会重心）
+#
+# 敵＝人。中心は選択と mag/vit 判定による交渉。戦闘は回避可能（失敗時のみ）。
+# 複数エンディング（和解 accord / 片方に加担 partisan / 決裂 rupture / 力で鎮圧 subdued /
+# 敗北 defeat）。既存 effect タイプだけで組む＝エンジン無改変。
+#
+# ★エンジンの制約に沿った割り当て（ruins と同じ）:
+#   - 技能判定(_resolve_check)を助けるのは **recon だけ**（recon_bonus）。よって交渉判定を
+#     有利化する社会的準備＝「根回し/下調べ」を recon にする。各交渉判定に recon_bonus:2。
+#   - hit_bonus/damage_bonus/item は **戦闘のみ**に効く＝交渉決裂時のフォールバック戦闘用。
+#   （＝「証拠や人脈で“説得判定そのもの”を種類別に有利化」は現エンジンでは表現不可。
+#     recon は単一フラグなので rapport と evidence を機構上区別できない。詳細は報告で指摘。）
+#
+# LLM-GM の描写テスト観点: 人間同士の緊張・機微・情報格差(I-D7)。Ordia の conflict_web に
+#   最も近い。暴力以外の解決（言葉と胆力）の場をどう描くか。
+# ※市販の数表・固有名詞はコピーしない。数値は自前。
+
+meta:
+  id: envoy
+  title: "水争いの仲裁"
+  intro: "川を挟む二つの集落が、涸れかけた流れの水利を巡って刃を研ぎ始めた。血が流れる前に鎮めてくれ――村の長老に託され、H は中州の会談の場へ向かう。転生者の目は、双方が伏せた事情まで映してしまう。"
+
+character:
+  hp: 20
+  mp: 10
+  attributes: {str: 8, mag: 8, vit: 9}
+
+village:                      # 会談の前に 2 つだけ支度する（少ない＝賭けが重い）
+  pick_count: 2
+  options:
+    - key: rapport
+      name: "双方の顔役に根回しし、証拠を検める"
+      gain: "交渉判定 +2（下調べの分）/ 決裂して斬られかけても初撃を見切る"
+      text: "H は前夜のうちに両岸を渡り、顔役の本音と、堰を切った証拠の在り処を掴む。誰が何を伏せているか――場に着く前に、H だけが知っている。"
+      effect: {type: recon}
+    - key: standing
+      name: "各集落の武人の型を見切っておく"
+      gain: "決裂時、武人への命中 +2"
+      text: "稽古場の隅で、双方の武人の踏み込みを覚える。事が刃に及んだとき、その型は H の内心に手順として残る。"
+      effect: {type: hit_bonus, target_enemy: champion, value: 2}
+    - key: guard
+      name: "護符を結び、身を固める"
+      gain: "決裂時、全命中判定 +1"
+      text: "古い護符を襟に縫い込む。剣呑な気に呑まれかけたとき、狙いがわずかにぶれにくくなる。"
+      effect: {type: hit_bonus, value: 1}
+    - key: retinue
+      name: "得物を検め、間合いを確かめる"
+      gain: "決裂時、物理ダメージ +2"
+      text: "帯びる得物の刃を起こし、間合いを体に馴染ませる。言葉が尽きた先の備えだ。"
+      effect: {type: damage_bonus, kind: physical, value: 2}
+    - key: balm
+      name: "血止めの傷薬を仕込む"
+      gain: "傷薬 ×2（決裂時の戦闘で使用）"
+      text: "膏薬を二包み、袖に隠す。「刃傷沙汰になれば、塗る間もあるまいが」。"
+      effect: {type: item, item: herb, count: 2}
+
+enemies:                      # 決裂時に相対する“人”。数値は自前
+  zealot:   {name: "気の立った若衆", hp: 6,  atk: 1, dmg: [1, 3], target: 6}
+  champion: {name: "集落の武人",     hp: 14, atk: 2, dmg: [2, 4], target: 7}
+
+map:                          # 中立の宿場で支度して回る
+  start: waypoint
+  locations:
+    waypoint: {name: "中立の宿場",   exits: {north: teahouse, east: dojo, south: shrine, west: armory}}
+    teahouse: {name: "茶屋（顔役の間）", exits: {south: waypoint, north: apoth}, action: rapport}
+    apoth:    {name: "薬売りの棚",     exits: {south: teahouse},          action: balm}
+    dojo:     {name: "稽古場",         exits: {west: waypoint},           action: standing}
+    shrine:   {name: "護符棚",         exits: {north: waypoint},          action: guard}
+    armory:   {name: "得物置き",       exits: {east: waypoint, west: road}, action: retinue}
+    road:     {name: "中州への道（会談へ）", exits: {east: armory}, leads_to_adventure: true}
+
+start_node: table
+
+nodes:
+  table:
+    title: "中州の会談"
+    text:
+      - "中州の平石を挟み、上流と下流の顔役が睨み合う。若衆は柄に手をかけ、武人は動かない。誰も口を開かない――先に折れた方が負けだと、双方が信じている。"
+    choices:
+      - key: hear
+        label: "双方の言い分を見立てて説く【mag 判定 / 目標 8：弁舌】"
+        check: {stat: mag, target: 8, tag: insight, recon_bonus: 2}
+        on_success: proposal
+        on_failure: heated
+      - key: overawe
+        label: "胆力で場を静める【vit 判定 / 目標 8：胆力】"
+        check: {stat: vit, target: 8, tag: nerve, recon_bonus: 2}
+        on_success: proposal
+        on_failure: heated
+
+  heated:
+    title: "激昂"
+    text:
+      - "言葉の綾が裏目に出た。若衆が唾を飛ばし、罵声が飛び交う。場は一気に熱を持つ。鎮めるか――いっそ、どちらかに理ありと裁いて幕を引くか。"
+    choices:
+      - key: soothe
+        label: "激昂を鎮める【mag 判定 / 目標 9】"
+        check: {stat: mag, target: 9, tag: soothe, recon_bonus: 2}
+        on_success: proposal
+        on_failure: brink
+      - {key: side_up, label: "上流に理ありと裁く（片方に加担）", next: side_upstream}
+      - {key: side_down, label: "下流に理ありと裁く（片方に加担）", next: side_downstream}
+
+  proposal:
+    title: "折衷の卓"
+    text:
+      - "熱が引き、双方が黙る。H は伏せられた証拠を卓に置く――上流は水を、下流は堰の普請役を出す。理の通った折衷案。あとは、手を打たせるだけだ。"
+    choices:
+      - key: settle
+        label: "折衷案で手を打たせる【mag 判定 / 目標 8：説得】"
+        check: {stat: mag, target: 8, tag: settle, recon_bonus: 2}
+        on_success: accord
+        on_failure: brink
+      - key: pressure
+        label: "双方に譲歩を迫る【vit 判定 / 目標 9：胆力】"
+        check: {stat: vit, target: 9, tag: pressure, recon_bonus: 2}
+        on_success: accord
+        on_failure: brink
+
+  brink:
+    title: "刃の際"
+    text:
+      - "説得は綻び、若衆が半ば刀を抜いた。血の一歩手前。ここで最後の言葉を賭けるか、仲裁を諦めて退くか。"
+    choices:
+      - key: lastword
+        label: "最後の説得を賭ける【mag 判定 / 目標 10】"
+        check: {stat: mag, target: 10, tag: lastword, recon_bonus: 2}
+        on_success: accord
+        on_failure: clash
+      - {key: withdraw, label: "仲裁を諦めて退く（決裂）", next: rupture}
+
+  clash:
+    title: "刃傷"
+    text:
+      - "言葉は尽きた。抜き放たれた刃が中州に閃く。武人と若衆が H に向かう――鎮めるには、もはや力しかない。"
+    encounter: [champion, zealot]
+    recon_free_first: true
+    on_win: subdued
+
+  accord:
+    title: "和解"
+    text:
+      - "双方が証文に手形を捺す。上流は堰を半ば開き、下流は普請の人手を出す。血は流れなかった。帰り道、H の掌に残る数値の余韻だけが、この均衡の危うさを覚えている。"
+    ending: accord
+
+  side_upstream:
+    title: "上流に与して"
+    text:
+      - "H は上流に理ありと裁いた。下流の顔役は歯を食いしばり、席を蹴る。水は上流に残り、遺恨は下流に残った。仲裁ではなく、裁定――そのつけは、いつか回る。"
+    ending: partisan
+
+  side_downstream:
+    title: "下流に与して"
+    text:
+      - "H は下流に理ありと裁いた。上流の顔役は無言で堰を睨み、去る。水は下流へ流れ、遺恨は上流に残った。仲裁ではなく、裁定――そのつけは、いつか回る。"
+    ending: partisan
+
+  rupture:
+    title: "決裂"
+    text:
+      - "H は仲裁を諦め、中州を退いた。背後で怒号が上がる。血が流れるかは、もう H の手を離れた。何も決められなかった――それも、一つの結末だ。"
+    ending: rupture
+
+  subdued:
+    title: "力で鎮めて"
+    text:
+      - "武人が膝をつき、若衆が刃を落とす。H は双方を力で黙らせた。争いは止まった――恐怖で。和解ではない。中州には、血の匂いだけが残る。"
+    ending: subdued
+
+  defeat:
+    title: "中州に倒れて"
+    text:
+      - "気づくと宿場の筵の上だった。誰かが中州から H を運んだらしい。仲裁は成らず、刃も止められなかった。傷は洗われ、息は整う。争いは、まだ川を挟んでいる。"
+    on_defeat_return: village
