@@ -120,6 +120,26 @@ def build_map_location_world_object_specs(
     return validate_world_object_specs(specs)
 
 
+def focusable_world_object_ids_for_current_location(
+    scenario_id: str,
+    game_map: GameMap,
+    specs: Iterable[WorldObjectSpec],
+) -> tuple[WorldObjectId, ...]:
+    """現在map locationとscenarioに属する静的focus候補IDを返す。"""
+
+    if game_map.current not in game_map.locations:
+        raise ValueError("game_map.current must identify an existing location")
+    WorldObjectId(scenario_id=scenario_id, local_id="scene-validation")
+    validated = validate_world_object_specs(specs)
+    matching = (
+        spec.object_id
+        for spec in validated
+        if spec.object_id.scenario_id == scenario_id
+        and spec.scene_id == game_map.current
+    )
+    return tuple(sorted(matching, key=serialize_world_object_id))
+
+
 @dataclass(frozen=True)
 class FocusState:
     """engineが確定した現在の注目対象だけを保持する。"""

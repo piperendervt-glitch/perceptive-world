@@ -16,6 +16,7 @@ from trpg_core.world import (
     WorldObjectSpec,
     clear_focus,
     build_map_location_world_object_specs,
+    focusable_world_object_ids_for_current_location,
     location_world_object_id,
     parse_world_object_id,
     serialize_world_object_id,
@@ -302,3 +303,156 @@ def test_map_query_uses_domain_map_not_presentation_map_view():
     assert "from .map import GameMap" in source
     assert "MapView" not in source
     assert "scenario_loader" not in source
+
+
+def test_current_location_focus_candidates_include_matching_spec_only():
+    game_map = _game_map([("well", Location("well", "古井戸"))], "well")
+    well = _spec()
+    assert focusable_world_object_ids_for_current_location(
+        "goblin", game_map, [well],
+    ) == (well.object_id,)
+
+
+def test_current_scene_focus_candidates_include_multiple_kinds():
+    game_map = _game_map([("well", Location("well", "古井戸"))], "well")
+    specs = [
+        _spec(),
+        WorldObjectSpec(_id(local="object/well-rope"), "prop", "井戸の縄", "well"),
+        WorldObjectSpec(_id(local="object/well-mark"), "mural", "井戸の印", "well"),
+    ]
+    result = focusable_world_object_ids_for_current_location("goblin", game_map, specs)
+    assert result == tuple(sorted(
+        (spec.object_id for spec in specs), key=serialize_world_object_id,
+    ))
+
+
+def test_focus_candidates_exclude_other_scenes_none_and_other_scenarios():
+    game_map = _game_map([
+        ("well", Location("well", "古井戸")),
+        ("plaza", Location("plaza", "村の広場")),
+    ], "well")
+    included = _spec()
+    specs = [
+        included,
+        _spec(_id(local="location/plaza"), label="村の広場", scene_id="plaza"),
+        _spec(_id(local="object/global"), label="共通情報", scene_id=None),
+        _spec(_id("ruins"), label="別世界の井戸"),
+    ]
+    assert focusable_world_object_ids_for_current_location(
+        "goblin", game_map, specs,
+    ) == (included.object_id,)
+
+
+def test_focus_candidates_return_empty_without_matching_spec():
+    game_map = _game_map([("well", Location("well", "古井戸"))], "well")
+    assert focusable_world_object_ids_for_current_location(
+        "goblin", game_map, [],
+    ) == ()
+
+
+def test_focus_candidate_order_is_independent_of_spec_input_order():
+    game_map = _game_map([("well", Location("well", "古井戸"))], "well")
+    specs = [
+        WorldObjectSpec(_id(local="object/z-rope"), "prop", "縄", "well"),
+        WorldObjectSpec(_id(local="object/a-mark"), "mural", "印", "well"),
+        _spec(),
+    ]
+    forward = focusable_world_object_ids_for_current_location("goblin", game_map, specs)
+    reverse = focusable_world_object_ids_for_current_location(
+        "goblin", game_map, reversed(specs),
+    )
+    assert forward == reverse == tuple(sorted(forward, key=serialize_world_object_id))
+
+
+@pytest.mark.parametrize("changed_field", ["label", "kind"])
+def test_focus_candidates_do_not_depend_on_label_or_kind(changed_field):
+    game_map = _game_map([("well", Location("well", "古井戸"))], "well")
+    original = _spec()
+    kwargs = {"object_id": original.object_id, "kind": original.kind,
+              "label": original.label, "scene_id": original.scene_id}
+    kwargs[changed_field] = "changed"
+    changed = WorldObjectSpec(**kwargs)
+    assert focusable_world_object_ids_for_current_location(
+        "goblin", game_map, [original],
+    ) == focusable_world_object_ids_for_current_location(
+        "goblin", game_map, [changed],
+    )
+
+
+def test_focus_candidates_switch_with_current_without_changing_map():
+    locations = [
+        ("well", Location("well", "古井戸")),
+        ("plaza", Location("plaza", "村の広場")),
+    ]
+    specs = [
+        _spec(),
+        _spec(_id(local="location/plaza"), label="村の広場", scene_id="plaza"),
+    ]
+    at_well = _game_map(locations, "well")
+    at_plaza = _game_map(locations, "plaza")
+    assert focusable_world_object_ids_for_current_location(
+        "goblin", at_well, specs,
+    ) == (specs[0].object_id,)
+    assert focusable_world_object_ids_for_current_location(
+        "goblin", at_plaza, specs,
+    ) == (specs[1].object_id,)
+    assert at_well.current == "well"
+    assert at_plaza.current == "plaza"
+
+
+def test_focus_candidates_reject_invalid_current_and_scenario():
+    invalid_map = _game_map([("well", Location("well", "古井戸"))], "missing")
+    with pytest.raises(ValueError):
+        focusable_world_object_ids_for_current_location("goblin", invalid_map, [])
+    valid_map = _game_map([("well", Location("well", "古井戸"))], "well")
+    with pytest.raises(ValueError):
+        focusable_world_object_ids_for_current_location("bad:scenario", valid_map, [])
+
+
+def test_focus_candidates_reject_duplicate_specs():
+    game_map = _game_map([("well", Location("well", "古井戸"))], "well")
+    with pytest.raises(ValueError):
+        focusable_world_object_ids_for_current_location(
+            "goblin", game_map, [_spec(), _spec(label="別名")],
+        )
+
+
+def test_focus_candidates_consume_generator_once():
+    game_map = _game_map([("well", Location("well", "古井戸"))], "well")
+    yielded = []
+
+    def specs():
+        yielded.append("well")
+        yield _spec()
+
+    assert focusable_world_object_ids_for_current_location(
+        "goblin", game_map, specs(),
+    ) == (_id(),)
+    assert yielded == ["well"]
+
+
+def test_focus_candidate_query_does_not_change_inputs_or_focus_state():
+    location = Location("well", "古井戸", {"south": "plaza"})
+    game_map = _game_map([("well", location)], "well")
+    specs = [_spec()]
+    focus = FocusState(_id(local="object/other"))
+    before = (
+        game_map.current, tuple(game_map.locations), location.id, location.name,
+        dict(location.exits), list(specs), focus,
+    )
+    focusable_world_object_ids_for_current_location("goblin", game_map, specs)
+    after = (
+        game_map.current, tuple(game_map.locations), location.id, location.name,
+        dict(location.exits), specs, focus,
+    )
+    assert after == before
+
+
+def test_goblin_well_is_current_scene_focus_candidate():
+    scenario = load_scenario("goblin")
+    game_map = build_map(scenario, current="well")
+    specs = build_map_location_world_object_specs(scenario.id, game_map)
+    result = focusable_world_object_ids_for_current_location(
+        scenario.id, game_map, specs,
+    )
+    assert tuple(map(serialize_world_object_id, result)) == ("goblin:location/well",)
