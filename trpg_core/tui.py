@@ -10,6 +10,8 @@ import unicodedata
 from collections import deque
 from dataclasses import dataclass, field
 
+from .presentation import MapView, RenderSnapshot
+
 CLEAR_SCREEN = "\x1b[2J\x1b[H"
 MIN_WIDTH = 60
 MIN_HEIGHT = 20
@@ -110,24 +112,33 @@ class MessageBuffer:
         if text:
             self._messages.append(text)
 
+    def messages(self) -> tuple[str, ...]:
+        """メッセージ単位の読み取り専用コピーを返す。"""
+        return tuple(self._messages)
+
     def recent_lines(self, width: int, height: int) -> list[str]:
-        height = max(0, height)
-        if height == 0:
-            return []
-        selected = []
-        remaining = height
-        for message in reversed(self._messages):
-            block = wrap_display(message, width)
-            if len(block) <= remaining:
-                selected.insert(0, block)
-                remaining -= len(block)
-                continue
-            if not selected:  # 最新メッセージ単体が長すぎる場合だけ末尾を残す。
-                tail = block[-height:]
-                tail[0] = truncate_display("…" + tail[0].lstrip("、。／ "), width)
-                selected = [tail]
-            break
-        return [line for block in selected for line in block]
+        return _recent_lines(self.messages(), width, height)
+
+
+def _recent_lines(messages, width: int, height: int) -> list[str]:
+    """メッセージ列を表示行へ変換する副作用のないTUI整形処理。"""
+    height = max(0, height)
+    if height == 0:
+        return []
+    selected = []
+    remaining = height
+    for message in reversed(tuple(messages)):
+        block = wrap_display(message, width)
+        if len(block) <= remaining:
+            selected.insert(0, block)
+            remaining -= len(block)
+            continue
+        if not selected:  # 最新メッセージ単体が長すぎる場合だけ末尾を残す。
+            tail = block[-height:]
+            tail[0] = truncate_display("…" + tail[0].lstrip("、。／ "), width)
+            selected = [tail]
+        break
+    return [line for block in selected for line in block]
 
 
 @dataclass
@@ -139,6 +150,82 @@ class ScreenModel:
     menu: list[tuple[str, str, str]] = field(default_factory=list)
     scene: str = ""
     recent: list[str] = field(default_factory=list)
+
+
+def render_local_cross_map(view: MapView) -> str:
+    """MapViewだけから、現在地と隣接出口を基準版と同じ十字配置で描く。"""
+    exits = {exit_view.direction: exit_view.label for exit_view in view.exits}
+    unknown = set(exits) - {"north", "east", "south", "west"}
+    if unknown:
+        raise ValueError(f"未対応の地図方向: {sorted(unknown)}")
+
+    center = f">{view.current_label}<"
+    west = exits.get("west")
+    east = exits.get("east")
+    north = exits.get("north")
+    south = exits.get("south")
+    left = f"[{west}] ← " if west else ""
+    right = f" → [{east}]" if east else ""
+    center_start = display_width(left)
+    center_width = display_width(center)
+
+    def centered(label: str) -> str:
+        column = center_start + max(0, (center_width - display_width(label)) // 2)
+        return " " * column + label
+
+    lines = []
+    if north:
+        lines.extend((centered(f"[{north}]"), centered("↑北")))
+    lines.append(f"{left}{center}{right}")
+    if south:
+        lines.extend((centered("↓南"), centered(f"[{south}]")))
+    return "\n".join(lines)
+
+
+def _map_scene(snapshot: RenderSnapshot) -> str:
+    if snapshot.map is None:
+        return snapshot.scene_text
+    return render_local_cross_map(snapshot.map)
+
+
+def screen_model_from_snapshot(snapshot: RenderSnapshot) -> ScreenModel:
+    """中立なRenderSnapshotをTUI専用ScreenModelへ変換する純関数。"""
+    player = snapshot.player
+    pending = (f"（持込予定 {player.pending_recovery_count}）"
+               if player.pending_recovery_count else "")
+    status = (f"HP {player.hp}/{player.hp_max}  MP {player.mp}/{player.mp_max}  "
+              f"{player.recovery_item_name} {player.recovery_item_count}{pending}  "
+              f"ターン {snapshot.turn}")
+
+    if snapshot.preparation is not None:
+        prep = snapshot.preparation
+        situation = f"支度 {prep.selected_count}/{prep.required_count}"
+    elif snapshot.scene_kind == "combat":
+        alive = [enemy for enemy in snapshot.enemies if enemy.alive]
+        situation = " / ".join(f"{enemy.name} HP{max(0, enemy.hp)}" for enemy in alive)
+        situation = situation or "敵なし"
+    elif snapshot.scene_kind == "decision":
+        situation = "行動を選択"
+    else:
+        situation = snapshot.scene_kind
+
+    scene = _map_scene(snapshot)
+    if snapshot.scene_kind == "combat":
+        target = next((enemy for enemy in snapshot.enemies if enemy.auto_target), None)
+        scene = f"自動対象: {target.name}" if target is not None else "敵なし"
+    if snapshot.ending:
+        scene = "\n".join(part for part in (scene, snapshot.ending) if part)
+
+    return ScreenModel(
+        place=snapshot.scene_title or snapshot.scene_id or "",
+        situation=situation,
+        status=status,
+        objective=snapshot.objective,
+        menu=[(action.label, action.canonical_command, action.detail or "")
+              for action in snapshot.actions if action.enabled],
+        scene=scene,
+        recent=_recent_lines(snapshot.recent_messages, 54, 8),
+    )
 
 
 def _row(text: str, inner_width: int) -> str:

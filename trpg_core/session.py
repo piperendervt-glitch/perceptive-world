@@ -370,16 +370,37 @@ class ConsoleController:
         pending = f"（持込予定 {pending_recovery}）" if pending_recovery else ""
         return f"HP {s.hp}/{s.hp_max}  MP {s.mp}/{s.mp_max}  {item} {s.herbs}{pending}"
 
-    def _draw_tui(self, place, situation, objective, menu, scene="", pending_recovery=0):
+    def _draw_tui(self, place, situation, objective, menu, scene="", pending_recovery=0,
+                  *, scene_kind="", scene_id=None, enemies=(), preparation=None,
+                  game_map=None, ending=None):
         if self.tui is None:
             return False
-        from .tui import ScreenModel
-        model = ScreenModel(
-            place=place, situation=situation,
-            status=self._status_line(pending_recovery=pending_recovery),
-            objective=objective, menu=menu, scene=scene,
-            recent=self.tui.messages.recent_lines(54, 8),
+        from .presentation import (
+            ActionView, PresentationContext, build_enemy_views, build_map_view,
+            build_render_snapshot,
         )
+        from .tui import screen_model_from_snapshot
+        actions = tuple(
+            ActionView(canonical_command=command, kind=scene_kind or "action",
+                       label=label, detail=detail)
+            for label, command, detail in menu
+        )
+        context = PresentationContext(
+            scene_kind=scene_kind,
+            scene_id=scene_id,
+            scene_title=place,
+            scene_text=scene,
+            objective=objective,
+            recovery_item_name=self._recovery_item_name(),
+            pending_recovery_count=pending_recovery,
+            actions=actions,
+            enemies=build_enemy_views(enemies),
+            preparation=preparation,
+            map=build_map_view(game_map) if game_map is not None else None,
+            recent_messages=self.tui.messages.messages(),
+            ending=ending,
+        )
+        model = screen_model_from_snapshot(build_render_snapshot(self.state, context))
         return self.tui.draw(model)
 
     # --- 入力案内（表示専用。状態・ログ・乱数には触れない） ---
@@ -453,13 +474,21 @@ class ConsoleController:
         return menu
 
     def _show_village_menu(self, gm, sc, picked, menu):
+        from .presentation import PreparationView
         remaining = sc.village_pick_count - len(picked)
         objective = (f"支度をあと {remaining} つ整える" if remaining > 0
                      else f"{self._departure_destination(sc)}へ向かう")
         if self._draw_tui(
                 gm.here().name, f"支度 {len(picked)}/{sc.village_pick_count}",
                 objective, menu, scene=self._map_text(gm),
-                pending_recovery=self._pending_recovery(picked)):
+                pending_recovery=self._pending_recovery(picked), scene_kind="village",
+                game_map=gm,
+                preparation=PreparationView(
+                    selected_keys=tuple(picked), selected_count=len(picked),
+                    required_count=sc.village_pick_count,
+                    pending_recovery_count=self._pending_recovery(picked),
+                    ready_to_depart=len(picked) >= sc.village_pick_count,
+                )):
             return
         self._show_compact_menu(
             gm.here().name, f"支度 {len(picked)}/{sc.village_pick_count}", objective, menu,
@@ -482,11 +511,18 @@ class ConsoleController:
         ]
 
     def _show_list_village_menu(self, sc, picked, menu):
+        from .presentation import PreparationView
         remaining = sc.village_pick_count - len(picked)
         if self._draw_tui(
                 "出立前の拠点", f"支度 {len(picked)}/{sc.village_pick_count}",
                 f"支度をあと {remaining} つ選ぶ", menu,
-                scene="未選択の支度を番号で選ぶ"):
+                scene="未選択の支度を番号で選ぶ", scene_kind="village",
+                preparation=PreparationView(
+                    selected_keys=tuple(picked), selected_count=len(picked),
+                    required_count=sc.village_pick_count,
+                    pending_recovery_count=self._pending_recovery(picked),
+                    ready_to_depart=len(picked) >= sc.village_pick_count,
+                )):
             return
         self._show_compact_menu(
             "出立前の拠点", f"支度 {len(picked)}/{sc.village_pick_count}",
@@ -524,7 +560,8 @@ class ConsoleController:
         if self._draw_tui(
                 self.state.scenario.node(self.state.node).title or "戦闘",
                 situation or "敵なし", "敵を退けるか離脱する", menu,
-                scene=f"自動対象: {alive[0].name_ja}" if alive else "敵なし"):
+                scene=f"自動対象: {alive[0].name_ja}" if alive else "敵なし",
+                scene_kind="combat", scene_id=self.state.node, enemies=enemies):
             return
         self._show_compact_menu(
             self.state.scenario.node(self.state.node).title or "戦闘",
@@ -795,7 +832,7 @@ class ConsoleController:
         while True:
             if not self._draw_tui(
                     n.title or n.id, "行動を選択", "次に取る行動を一つ選ぶ",
-                    menu, scene=txt):
+                    menu, scene=txt, scene_kind="decision", scene_id=n.id):
                 self._show_compact_menu(
                     n.title or n.id, "行動を選択", "次に取る行動を一つ選ぶ", menu,
                 )

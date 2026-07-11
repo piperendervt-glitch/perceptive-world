@@ -7,9 +7,22 @@ import copy
 import io
 import os
 
+import pytest
+
 from trpg_core import record, session
 from trpg_core.combat import run_combat
 from trpg_core.map import build_map
+from trpg_core.map_view import render_map
+from trpg_core.presentation import (
+    ActionView,
+    EnemyView,
+    PlayerView,
+    PreparationView,
+    PresentationContext,
+    RenderSnapshot,
+    build_map_view,
+    build_render_snapshot,
+)
 from trpg_core.record import RecordingController
 from trpg_core.scenario_loader import load_scenario
 from trpg_core.session import ConsoleController, GameState
@@ -20,6 +33,8 @@ from trpg_core.tui import (
     TerminalUI,
     display_width,
     render_screen,
+    render_local_cross_map,
+    screen_model_from_snapshot,
     wrap_display,
 )
 
@@ -138,6 +153,192 @@ def test_message_buffer_drops_whole_old_messages_and_marks_truncated_latest():
     assert len(lines) == 2
     assert lines[0].startswith("…")
     assert not lines[0].startswith(("。", "、", "／"))
+
+
+def test_message_buffer_messages_is_an_immutable_copy():
+    messages = MessageBuffer()
+    messages.add("最初")
+    copied = messages.messages()
+    messages.add("次")
+    assert copied == ("最初",)
+    assert messages.messages() == ("最初", "次")
+
+
+def test_snapshot_adapter_is_pure_deterministic_and_formats_numbers(monkeypatch):
+    snapshot = RenderSnapshot(
+        scenario_id="beasts", scene_id="battle", scene_kind="combat",
+        scene_title="獣道", scene_text="", turn=3, objective="獣を退ける",
+        player=PlayerView(12, 20, 4, 10, "薬草", 1, 2),
+        actions=(ActionView("attack", "combat", "攻撃"),
+                 ActionView("flee", "combat", "逃げる")),
+        enemies=(EnemyView("wolf", "狼", 7, True, True),
+                 EnemyView("boar", "猪", 9, True, False)),
+        recent_messages=("狼の攻撃をかわした。",),
+    )
+    before = copy.deepcopy(snapshot)
+    monkeypatch.setenv("TERM", "dumb")
+    monkeypatch.setenv("PERCEPTIVE_NO_ANSI", "1")
+    first = screen_model_from_snapshot(snapshot)
+    second = screen_model_from_snapshot(snapshot)
+    assert first == second
+    assert snapshot == before
+    assert first.status == "HP 12/20  MP 4/10  薬草 1（持込予定 2）  ターン 3"
+    assert first.situation == "狼 HP7 / 猪 HP9"
+    assert first.scene == "自動対象: 狼"
+    assert [item[1] for item in first.menu] == ["attack", "flee"]
+
+
+def test_village_snapshot_adapter_uses_structured_map_and_preparation():
+    state = GameState(7, scenario=load_scenario("ruins"))
+    game_map = build_map(state.scenario, state.location)
+    snapshot = build_render_snapshot(
+        state,
+        PresentationContext(
+            scene_kind="village", scene_title=game_map.here().name,
+            objective="支度をあと 1 つ整える", recovery_item_name="傷薬",
+            pending_recovery_count=2,
+            preparation=PreparationView(("one",), 1, 2, 2, False),
+            map=build_map_view(game_map),
+            actions=(ActionView("look", "village", "周囲を見る"),),
+            recent_messages=("支度を始めた。",),
+        ),
+    )
+    model = screen_model_from_snapshot(snapshot)
+    assert model.place == game_map.here().name
+    assert model.situation == "支度 1/2"
+    assert game_map.here().name in model.scene
+    assert all(game_map.dest_name(direction) in model.scene for direction in game_map.exits())
+    assert model.objective == "支度をあと 1 つ整える"
+    assert model.recent == ["支度を始めた。"]
+
+
+@pytest.mark.parametrize("scenario_id", ["goblin", "ruins", "beasts"])
+def test_map_view_reproduces_baseline_cross_map_at_every_location(scenario_id):
+    scenario = load_scenario(scenario_id)
+    assert all(
+        set(location.get("exits", ())) <= {"north", "east", "south", "west"}
+        for location in scenario.map_locations.values()
+    )
+    for location_id in scenario.map_locations:
+        game_map = build_map(scenario, location_id)
+        view = build_map_view(game_map)
+        before = copy.deepcopy(view)
+        first = render_local_cross_map(view)
+        assert first == render_map(game_map)
+        assert render_local_cross_map(view) == first
+        assert view == before
+
+
+def test_cross_map_places_all_four_exits_around_emphasized_center():
+    scenario = load_scenario("goblin")
+    game_map = build_map(scenario, "plaza")
+    scene = render_local_cross_map(build_map_view(game_map))
+    lines = scene.splitlines()
+    center_index = next(i for i, line in enumerate(lines) if ">村の広場<" in line)
+    center_line = lines[center_index]
+    assert "[古井戸]" in "\n".join(lines[:center_index])
+    assert "[古い祠]" in "\n".join(lines[center_index + 1:])
+    assert center_line.index("[村長の家]") < center_line.index(">村の広場<")
+    assert center_line.index(">村の広場<") < center_line.index("[薬草小屋]")
+    for label in ("古井戸", "古い祠", "村長の家", "薬草小屋"):
+        assert scene.count(f"[{label}]") == 1
+    assert "北 →" not in scene and "東 →" not in scene
+
+
+@pytest.mark.parametrize(
+    ("scenario_id", "location_id", "destination", "arrow"),
+    [("goblin", "lookout", "古井戸", "↓南"),
+     ("ruins", "apoth", "崩れた石棚", "↓南"),
+     ("beasts", "balmhut", "老猟師の小屋", "↓南")],
+)
+def test_cross_map_endpoint_shows_only_existing_exit(
+        scenario_id, location_id, destination, arrow):
+    scenario = load_scenario(scenario_id)
+    scene = render_local_cross_map(build_map_view(build_map(scenario, location_id)))
+    assert f">{scenario.map_locations[location_id]['name']}<" in scene
+    assert f"[{destination}]" in scene
+    assert arrow in scene
+    assert "↑北" not in scene and " ← " not in scene and " → " not in scene
+
+
+@pytest.mark.parametrize("scenario_id", ["goblin", "ruins", "beasts"])
+def test_departure_location_keeps_return_exit_and_depart_command(scenario_id):
+    state = GameState(7, scenario=load_scenario(scenario_id))
+    controller = ConsoleController(state, os.devnull)
+    exit_id = next(
+        location_id for location_id, data in state.scenario.map_locations.items()
+        if data.get("leads_to_adventure")
+    )
+    game_map = build_map(state.scenario, exit_id)
+    scene = render_local_cross_map(build_map_view(game_map))
+    destination = next(iter(game_map.here().exits.values()))
+    assert f"[{game_map.locations[destination].name}]" in scene
+    picked = state.scenario.village_order[:state.scenario.village_pick_count]
+    assert controller._village_menu(game_map, state.scenario, picked)[0][1] == "depart"
+
+
+def test_decision_adapter_preserves_action_order_labels_and_scene_once():
+    state = GameState(7, scenario=load_scenario("goblin"))
+    node = state.scenario.node(state.node)
+    text = state.scenario.node_text(node.id)
+    actions = tuple(ActionView(str(i), "decision", choice.label)
+                    for i, choice in enumerate(node.choices, 1))
+    snapshot = build_render_snapshot(
+        state,
+        PresentationContext(
+            scene_kind="decision", scene_id=node.id, scene_title=node.title,
+            scene_text=text, objective="次に取る行動を一つ選ぶ", actions=actions,
+        ),
+    )
+    model = screen_model_from_snapshot(snapshot)
+    assert model.scene == text
+    assert model.scene.count(text) == 1
+    assert [(label, command) for label, command, _detail in model.menu] == [
+        (action.label, action.canonical_command) for action in actions
+    ]
+
+
+def test_normal_tui_path_builds_render_snapshot_without_side_effects(monkeypatch):
+    import trpg_core.presentation as presentation
+
+    state, controller = _controller()
+    controller.tui = TerminalUI(stream=FakeTTY(), size_getter=_size(), environ={})
+    game_map = build_map(state.scenario, state.location)
+    menu = controller._village_menu(game_map, state.scenario, [])
+    before = _fingerprint(state)
+    current = game_map.current
+    seen = []
+    original = presentation.build_render_snapshot
+
+    def spy(state_arg, context):
+        result = original(state_arg, context)
+        seen.append(result)
+        return result
+
+    monkeypatch.setattr(presentation, "build_render_snapshot", spy)
+    controller._show_village_menu(game_map, state.scenario, [], menu)
+    assert len(seen) == 1
+    assert isinstance(seen[0], RenderSnapshot)
+    assert _fingerprint(state) == before
+    assert game_map.current == current
+
+
+def test_menu_path_does_not_require_snapshot_adapter(monkeypatch, capsys):
+    import trpg_core.tui as tui_module
+
+    state, controller = _controller("menu")
+    game_map = build_map(state.scenario, state.location)
+    menu = controller._village_menu(game_map, state.scenario, [])
+    monkeypatch.setattr(
+        tui_module, "screen_model_from_snapshot",
+        lambda _snapshot: (_ for _ in ()).throw(AssertionError("menu must not use TUI adapter")),
+    )
+    controller._show_village_menu(game_map, state.scenario, [], menu)
+    output = capsys.readouterr().out
+    assert "目的:" in output
+    assert [item[1] for item in menu] == [
+        item[1] for item in controller._village_menu(game_map, state.scenario, [])
+    ]
 
 
 def test_tui_redraw_does_not_change_state_rng_or_log():
