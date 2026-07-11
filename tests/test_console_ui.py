@@ -6,6 +6,8 @@ import builtins
 import copy
 import os
 
+import pytest
+
 from trpg_core.map import build_map
 from trpg_core.record import RecordingController
 from trpg_core.scenario_loader import load_scenario
@@ -143,3 +145,65 @@ def test_recording_receives_normalized_combat_command(monkeypatch):
     monkeypatch.setattr(builtins, "input", lambda _prompt: "1")
     assert rec.combat_command(state, enemies) == "attack"
     assert rec.inputs == ["combat:attack"]
+
+
+@pytest.mark.parametrize(
+    ("scenario_id", "destination", "forbidden"),
+    [
+        ("goblin", "森の道", None),
+        ("thief", "裏木戸", "森"),
+        ("beasts", "獣道の入口", None),
+        ("ruins", "遺跡の口", "森"),
+        ("envoy", "中州の会談", "森"),
+    ],
+)
+def test_departure_wording_uses_scenario_destination(
+        scenario_id, destination, forbidden, capsys):
+    state, controller = _controller(scenario_id=scenario_id)
+    sc = state.scenario
+    exit_id = next(lid for lid, data in sc.map_locations.items()
+                   if data.get("leads_to_adventure"))
+    gm = build_map(sc, exit_id)
+    picked = sc.village_order[:sc.village_pick_count]
+    before = _fingerprint(state)
+    menu = controller._village_menu(gm, sc, picked)
+    controller._show_village_menu(gm, sc, picked, menu)
+    out = capsys.readouterr().out
+    assert destination in menu[0][0]
+    assert destination in out
+    if forbidden:
+        assert forbidden not in menu[0][0]
+        assert "村の出口" not in out
+    assert _fingerprint(state) == before
+
+
+@pytest.mark.parametrize("scenario_id", ["goblin", "thief", "beasts", "ruins", "envoy"])
+def test_respawn_uses_scenario_defeat_text(scenario_id, capsys):
+    state, controller = _controller(scenario_id=scenario_id)
+    state.respawn_on_defeat = True
+    controller.present_event({"type": "respawn", "hp": state.hp, "mp": state.mp})
+    out = capsys.readouterr().out
+    assert state.scenario.ending_text("defeat") in out
+
+
+def test_internal_check_tag_gets_unique_scenario_label():
+    _state, controller = _controller(scenario_id="thief")
+    label = controller._scenario_check_label("crawl")
+    assert "崩れ坑" in label and "vit" in label
+    assert "crawl" not in label
+
+
+@pytest.mark.parametrize("scenario_id", ["goblin", "thief", "beasts", "ruins", "envoy"])
+def test_all_scenario_check_tags_have_safe_player_labels(scenario_id):
+    state, controller = _controller(scenario_id=scenario_id)
+    built_in = {"sneak", "vit_check"}
+    for node in state.scenario.nodes.values():
+        for choice in node.choices:
+            check = choice.check or {}
+            tag = check.get("tag")
+            if not tag or tag in built_in:
+                continue
+            label = controller._scenario_check_label(tag)
+            assert label != tag
+            assert tag not in label
+            assert "〔" in label or label == "判定"

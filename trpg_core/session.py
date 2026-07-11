@@ -320,11 +320,67 @@ def write_log(state: GameState, path: str | None = None) -> str:
 class ConsoleController:
     """人間がキーボードで選ぶ。状態への参照を持ち、status/save/load/quit を捌く。"""
 
-    def __init__(self, state: GameState, save_dir: str):
+    def __init__(self, state: GameState, save_dir: str, ui_mode: str = "menu"):
         self.state = state
         self.save_dir = save_dir
+        self.ui_mode = ui_mode
+        self.tui = None
+        if ui_mode == "tui":
+            from .tui import TerminalUI
+            self.tui = TerminalUI()
         # 判定結果・敵ターン・敗北描写を「起きた順」に画面へ出す（表示専用フック）。
         state.presenter = self.present_event
+
+    def _tui_active(self):
+        return self.tui is not None and self.tui.can_render()
+
+    def _message(self, text):
+        """対話表示だけを出力する。ゲーム状態・ログには書かない。"""
+        if self._tui_active():
+            self.tui.messages.add(text)
+        else:
+            print(text)
+
+    def announce(self, text):
+        self._message(text)
+
+    def _recovery_item_name(self):
+        for key in self.state.scenario.village_order:
+            opt = self.state.scenario.village_option(key)
+            eff = opt.get("effect") or {}
+            if eff.get("type") == "item" and eff.get("item") == "herb":
+                gain = opt.get("gain", "")
+                if "薬草" in gain:
+                    return "薬草"
+                if "傷薬" in gain:
+                    return "傷薬"
+        return "回復薬"
+
+    def _pending_recovery(self, picked):
+        count = 0
+        for key in picked:
+            eff = (self.state.scenario.village_option(key).get("effect") or {})
+            if eff.get("type") == "item" and eff.get("item") == "herb":
+                count += int(eff.get("count", 0))
+        return count
+
+    def _status_line(self, pending_recovery=0):
+        s = self.state
+        item = self._recovery_item_name()
+        pending = f"（持込予定 {pending_recovery}）" if pending_recovery else ""
+        return f"HP {s.hp}/{s.hp_max}  MP {s.mp}/{s.mp_max}  {item} {s.herbs}{pending}"
+
+    def _draw_tui(self, place, situation, objective, menu, scene="", pending_recovery=0):
+        if self.tui is None:
+            return False
+        from .tui import ScreenModel
+        model = ScreenModel(
+            place=place, situation=situation,
+            status=self._status_line(pending_recovery=pending_recovery),
+            objective=objective, menu=menu, scene=scene,
+            recent=self.tui.messages.recent_lines(54, 8),
+        )
+        return self.tui.draw(model)
 
     # --- 入力案内（表示専用。状態・ログ・乱数には触れない） ---
     @staticmethod
@@ -339,22 +395,32 @@ class ConsoleController:
         print()
         print("[S] 状態  [H] ヘルプ  [Q] 終了")
 
-    @staticmethod
-    def _show_help(menu, include_load=True):
+    def _help_lines(self, menu, include_load=True):
+        lines = ["数字または [コマンド] を直接入力できる。"]
+        for i, (label, command, detail) in enumerate(menu, 1):
+            lines.append(f"{i}) {label} — {detail} [{command}]")
+        lines.extend([
+            "S / status — H の状態を表示",
+            "H / help — このヘルプを表示",
+            "Q / quit — ゲームを中断",
+            "save <名前> — 現在の状態を保存（例: save camp）",
+        ])
+        if include_load:
+            lines.append("load <名前> — 保存した状態を読込（例: load camp）")
+        else:
+            lines.append("load は戦闘外で使用する。")
+        lines.append("地図では go <方角> または方角単独も使用できる。")
+        return lines
+
+    def _show_help(self, menu, include_load=True):
+        lines = self._help_lines(menu, include_load)
+        if self.tui is not None and self.tui.draw_help(lines):
+            input("Enterで戻る > ")  # UI専用。RecordingControllerへは渡らない。
+            return
         print()
         print("── ヘルプ ──")
-        print("数字または [コマンド] を直接入力できる。")
-        for i, (label, command, detail) in enumerate(menu, 1):
-            print(f"  {i}) {label} — {detail} [{command}]")
-        print("  S / status — H の状態を表示")
-        print("  H / help   — このヘルプを表示")
-        print("  Q / quit   — ゲームを中断")
-        print("  save <名前> — 現在の状態を保存（例: save camp）")
-        if include_load:
-            print("  load <名前> — 保存した状態を読込（例: load camp）")
-        else:
-            print("  load は戦闘外で使用する。")
-        print("  地図では go <方角> または方角単独も使用できる。")
+        for line in lines:
+            print(f"  {line}")
 
     @staticmethod
     def _menu_command(raw, menu):
@@ -375,7 +441,8 @@ class ConsoleController:
             opt = sc.village_option(loc.action)
             menu.append((opt["name"], "do", "この場所で支度を行う"))
         if loc.leads_to_adventure and len(picked) >= sc.village_pick_count:
-            menu.append(("森へ出立する", "depart", "村を出て冒険へ進む"))
+            destination = self._departure_destination(sc)
+            menu.append((f"{destination}へ向かう", "depart", "拠点から冒険へ出立する"))
         exits = gm.exits()
         for direction in _DIR_ORDER:
             if direction in exits:
@@ -388,10 +455,20 @@ class ConsoleController:
     def _show_village_menu(self, gm, sc, picked, menu):
         remaining = sc.village_pick_count - len(picked)
         objective = (f"支度をあと {remaining} つ整える" if remaining > 0
-                     else "村の出口から出立する")
+                     else f"{self._departure_destination(sc)}へ向かう")
+        if self._draw_tui(
+                gm.here().name, f"支度 {len(picked)}/{sc.village_pick_count}",
+                objective, menu, scene=self._map_text(gm),
+                pending_recovery=self._pending_recovery(picked)):
+            return
         self._show_compact_menu(
             gm.here().name, f"支度 {len(picked)}/{sc.village_pick_count}", objective, menu,
         )
+
+    @staticmethod
+    def _departure_destination(sc):
+        node = sc.node(sc.start_node)
+        return node.title or "冒険"
 
     @staticmethod
     def _choice_menu(node):
@@ -406,8 +483,13 @@ class ConsoleController:
 
     def _show_list_village_menu(self, sc, picked, menu):
         remaining = sc.village_pick_count - len(picked)
+        if self._draw_tui(
+                "出立前の拠点", f"支度 {len(picked)}/{sc.village_pick_count}",
+                f"支度をあと {remaining} つ選ぶ", menu,
+                scene="未選択の支度を番号で選ぶ"):
+            return
         self._show_compact_menu(
-            "出立前の村", f"支度 {len(picked)}/{sc.village_pick_count}",
+            "出立前の拠点", f"支度 {len(picked)}/{sc.village_pick_count}",
             f"支度をあと {remaining} つ選ぶ", menu,
         )
 
@@ -431,13 +513,19 @@ class ConsoleController:
             menu.append((f"魔法 → {target_name}（自動）", "magic",
                          f"MPを {MP_COST} 消費して先頭の生存敵を攻撃する"))
         if state.herbs > 0:
-            menu.append(("薬草を使う", "herb", "薬草を使ってHPを回復する"))
+            item = self._recovery_item_name()
+            menu.append((f"{item}を使う", "herb", f"{item}を使ってHPを回復する"))
         menu.append(("逃げる", "flee", "戦闘からの離脱を試みる"))
         return menu
 
     def _show_combat_menu(self, state, enemies, menu):
         alive = [e for e in enemies if e.alive]
         situation = " / ".join(f"{e.name_ja} HP{max(0, e.hp)}" for e in alive)
+        if self._draw_tui(
+                self.state.scenario.node(self.state.node).title or "戦闘",
+                situation or "敵なし", "敵を退けるか離脱する", menu,
+                scene=f"自動対象: {alive[0].name_ja}" if alive else "敵なし"):
+            return
         self._show_compact_menu(
             self.state.scenario.node(self.state.node).title or "戦闘",
             situation or "敵なし", "敵を退けるか離脱する", menu,
@@ -450,8 +538,10 @@ class ConsoleController:
     def explores(self):
         sc = self.state.scenario
         if not getattr(sc, "has_map", False):
-            print()
-            print(f"  ── 支度 —— 出立の前に、{len(sc.village_order)} つから {sc.village_pick_count} つ選ぶ ──")
+            self._message(
+                f"支度 — 出立の前に、{len(sc.village_order)} つから "
+                f"{sc.village_pick_count} つ選ぶ"
+            )
             return list_explore_and_pick(self)
         return self._walk_village(sc)
 
@@ -462,9 +552,7 @@ class ConsoleController:
         gm = build_map(sc, self.state.location)
         picked: list[str] = []
         pick_count = sc.village_pick_count
-        print()
-        print(f"  ── 村を歩いて支度する（{pick_count} つ整えて、村の出口から森へ）──")
-        print("     コマンド: go <方角> / 北南東西 / look / do（その場で探索）/ depart（森へ）")
+        self._message(f"拠点で支度する（{pick_count} つ整えて、出口から出立）")
         self._show_here(gm, sc, picked)
         while len(picked) <= pick_count:
             self.state.location = gm.current           # 保存点で現在地を最新化
@@ -482,7 +570,7 @@ class ConsoleController:
                 self._show_here(gm, sc, picked)
                 continue
             if meta == "quit":
-                print("中断する。"); sys.exit(0)
+                self._message("中断する。"); sys.exit(0)
             if meta == "handled":
                 continue
             parts = low.split()
@@ -496,56 +584,63 @@ class ConsoleController:
             elif cmd in ("do", "explore", "search", "action", "x", "調べる", "聞く"):
                 self._do_action(gm, sc, picked, pick_count)
             elif cmd in ("depart", "leave", "forest", "森", "発つ"):
-                if self._try_depart(gm, picked, pick_count):
+                if self._try_depart(gm, sc, picked, pick_count):
                     return picked
             else:
-                print("  その選択は使用できません。")
+                self._message("その選択は使用できません。")
         return picked
 
     def _try_move(self, gm, sc, picked, direction):
         if gm.move(direction):
             self.state.location = gm.current
+            self._message(f"{gm.here().name}へ移動した。")
             self._show_here(gm, sc, picked)
         else:
-            print("  そちらへは道がない。")
+            self._message("そちらへは道がない。")
 
     def _do_action(self, gm, sc, picked, pick_count):
         key = gm.here().action
         if not key:
-            print("  ここで特にできることはない。歩いて回ろう。")
+            self._message("ここで特にできることはない。歩いて回ろう。")
             return
         if key in picked:
-            print("  それはもう済ませた。")
+            self._message("それはもう済ませた。")
             return
         if len(picked) >= pick_count:
-            print(f"  支度はもう {pick_count} つ整えた。村の出口から森へ発とう（depart）。")
+            self._message(f"支度はもう {pick_count} つ整えた。出口から出立しよう。")
             return
         opt = sc.village_option(key)
         picked.append(key)
-        print(f"  → {opt.get('text', '')}")
-        print(f"  （{opt['name']}：{opt.get('gain', '')}／支度 {len(picked)}/{pick_count}）")
+        self._message(opt.get("text", ""))
+        self._message(f"{opt['name']}：{opt.get('gain', '')}／支度 {len(picked)}/{pick_count}")
 
-    def _try_depart(self, gm, picked, pick_count):
+    def _try_depart(self, gm, sc, picked, pick_count):
         if not gm.here().leads_to_adventure:
-            print("  ここからは森へ発てない。「村の出口（森へ）」まで歩こう。")
+            self._message("ここからは出立できない。出口まで移動しよう。")
             return False
         if len(picked) < pick_count:
-            print(f"  まだ支度が {pick_count - len(picked)} つ残っている（各所で do）。")
+            self._message(f"まだ支度が {pick_count - len(picked)} つ残っている。")
             return False
-        print("  ——村を出て、森の道へ。")
+        self._message(f"{self._departure_destination(sc)}へ向けて出立した。")
         return True
 
-    def _show_here(self, gm, sc, picked):
+    @staticmethod
+    def _map_text(gm):
         from .map_view import render_map
+        return render_map(gm)
+
+    def _show_here(self, gm, sc, picked):
+        if self._tui_active():
+            return
         print()
-        print(render_map(gm))
+        print(self._map_text(gm))
         loc = gm.here()
         if loc.action:
             opt = sc.village_option(loc.action)
             mark = "済" if loc.action in picked else "未"
             print(f"  ここで: {opt['name']}（{opt.get('gain', '')}）[{mark}] —— 'do' で行う")
         if loc.leads_to_adventure:
-            print("  ここから 'depart' で森へ発てる。")
+            print(f"  ここから 'depart' で{self._departure_destination(sc)}へ向かえる。")
         print(f"  支度 {len(picked)}/{sc.village_pick_count}")
 
     # --- 判定・戦闘の結果表示（Fix1）／敗北描写（Fix2） ---
@@ -557,32 +652,30 @@ class ConsoleController:
         elif t == "check":
             self._show_check(ev)
         elif t == "mp_cost":
-            print(f"     魔力を {ev['cost']} 消費（残 MP {ev['mp']}）")
+            self._message(f"魔力を {ev['cost']} 消費（残 MP {ev['mp']}）")
         elif t == "player_attack":
             self._show_player_attack(ev)
         elif t == "enemy_attack":
             self._show_enemy_attack(ev)
         elif t == "herb":
-            print(f"     薬草を噛む —— HP+{ev['heal']}（HP {ev['hp']}／残 薬草 {ev['herbs']}）")
+            item = self._recovery_item_name()
+            self._message(f"{item}を使う — HP+{ev['heal']}（HP {ev['hp']}／残 {item} {ev['herbs']}）")
         elif t == "combat_win":
-            print("     ——敵を退けた。")
+            self._message("敵を退けた。")
         elif t == "defeat":
-            print()
-            print("  H は膝から崩れ落ちた。意識が遠のく——")
+            if not self.state.respawn_on_defeat:
+                self._message("H は膝から崩れ落ちた。意識が遠のく——")
         elif t == "respawn":
-            print()
-            print("  気がつくと、村の広場に寝かされていた。誰かが運んでくれたらしい。")
-            print("  傷は洗われ、息は整っている。だが、支度は最初からやり直しだ。")
-            print("  ——まだ、終わってはいない。もう一度、森へ。")
+            text = self.state.scenario.ending_text("defeat")
+            self._message(text or "気がつくと拠点へ戻されていた。支度を整え直そう。")
 
     def _show_encounter(self, ev):
         sc = self.state.scenario
-        print()
         txt = sc.node_text(ev["node"])
         if txt:
-            print(f"  {txt}")
+            self._message(txt)
         names = "／".join(sc.enemy_name(k) for k in ev["enemies"])
-        print(f"  ▼ 戦闘 —— {names}")
+        self._message(f"戦闘 — {names}")
 
     def _show_check(self, ev):
         tag = ev.get("tag")
@@ -593,7 +686,7 @@ class ConsoleController:
             "free_hit": "偵察の一手",
             "attack_attack": "H の斬撃〔str〕",
             "magic_attack": "H の呪〔mag〕",
-        }.get(tag, tag or "判定")
+        }.get(tag) or self._scenario_check_label(tag)
         # 成否の語を判定種別に合わせる
         if tag in ("attack_attack", "magic_attack", "free_hit"):
             ok, ng = "命中", "外れ"
@@ -602,7 +695,7 @@ class ConsoleController:
         else:
             ok, ng = "成功", "失敗"
         if ev.get("auto"):
-            print(f"     {label} —— {ok}（自動）")
+            self._message(f"{label} — {ok}（自動）")
             return
         dice = ev["dice"]
         mod = ev["modifier"]
@@ -613,39 +706,54 @@ class ConsoleController:
             result = "大失敗（1ゾロ・自動失敗）"
         else:
             result = ok if ev["success"] else ng
-        print(f"     {label}: 2D6[{dice[0]},{dice[1]}]={ev['sum']} {sign} "
-              f"→ {ev['total']} vs 目標{ev['target']} → {result}")
+        self._message(f"{label}: 2D6[{dice[0]},{dice[1]}]={ev['sum']} {sign} "
+                      f"→ {ev['total']} vs 目標{ev['target']} → {result}")
 
     def _show_player_attack(self, ev):
         if ev.get("damage", 0) > 0:
             crit = "（会心！）" if ev.get("crit") else ""
-            print(f"     → {self.state.scenario.enemy_name(ev['target'])} に {ev['damage']} ダメージ{crit}"
-                  f"（残 HP {ev['enemy_hp']}）")
+            self._message(f"{self.state.scenario.enemy_name(ev['target'])} に "
+                          f"{ev['damage']} ダメージ{crit}（残 HP {ev['enemy_hp']}）")
         # 外れは check 行が「外れ」と出しているので、ここでは重ねない。
 
     def _show_enemy_attack(self, ev):
         d = ev["dice"]
         name = self.state.scenario.enemy_name(ev["enemy"])
         if ev["hit"]:
-            print(f"     {name} の攻撃 [{d[0]},{d[1]}]={ev['total']} "
-                  f"→ {ev['damage']} ダメージを受けた（HP {ev['player_hp']}）")
+            self._message(f"{name} の攻撃 [{d[0]},{d[1]}]={ev['total']} "
+                          f"→ {ev['damage']} ダメージを受けた（HP {ev['player_hp']}）")
         else:
-            print(f"     {name} の攻撃 [{d[0]},{d[1]}]={ev['total']} → かわした")
+            self._message(f"{name} の攻撃 [{d[0]},{d[1]}]={ev['total']} → かわした")
 
     # --- 内心表示（I-4: H にだけ見えているもの） ---
     def _show_status(self):
         s = self.state
-        print("  ── H の内心（転生者にだけ見える数値・I-4）──")
-        print(f"     HP {s.hp}/{s.hp_max}   MP {s.mp}/{s.mp_max}   薬草 {s.herbs}")
-        print(f"     str {s.str}(+{modifier(s.str)})  mag {s.mag}(+{modifier(s.mag)})  vit {s.vit}(+{modifier(s.vit)})")
-        print(f"     授かり: {', '.join(s.buff_labels) if s.buff_labels else 'なし'}")
+        self._message("H の内心（転生者にだけ見える数値・I-4）")
+        self._message(f"HP {s.hp}/{s.hp_max}  MP {s.mp}/{s.mp_max}  "
+                      f"{self._recovery_item_name()} {s.herbs}")
+        self._message(f"str {s.str}(+{modifier(s.str)})  mag {s.mag}(+{modifier(s.mag)})  "
+                      f"vit {s.vit}(+{modifier(s.vit)})")
+        self._message(f"授かり: {', '.join(s.buff_labels) if s.buff_labels else 'なし'}")
+
+    def _scenario_check_label(self, tag):
+        matches = []
+        for node in self.state.scenario.nodes.values():
+            for choice in node.choices:
+                check = choice.check or {}
+                if check.get("tag") == tag:
+                    matches.append((choice.label, check.get("stat")))
+        if len(matches) != 1:
+            return "判定"
+        label, stat = matches[0]
+        label = label.split("【", 1)[0].strip()
+        return f"{label}〔{stat}〕" if stat else label
 
     def _save(self, name):
         os.makedirs(self.save_dir, exist_ok=True)
         path = os.path.join(self.save_dir, f"{name}.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.state.snapshot(), f, ensure_ascii=False, indent=1)
-        print(f"  [セーブ] {path}")
+        self._message(f"[セーブ] {path}")
 
     def _load(self, name) -> bool:
         path = os.path.join(self.save_dir, f"{name}.json")
@@ -653,10 +761,10 @@ class ConsoleController:
             with open(path, "r", encoding="utf-8") as f:
                 snap = json.load(f)
         except OSError:
-            print(f"  [ロード失敗] {path} が見つからない")
+            self._message(f"[ロード失敗] {path} が見つからない")
             return False
         self.state.restore(snap)
-        print(f"  [ロード] {path}（rng 状態も復元）")
+        self._message(f"[ロード] {path}（rng 状態も復元）")
         return True
 
     def _meta(self, cmd) -> str | None:
@@ -678,16 +786,19 @@ class ConsoleController:
     def choice(self, node, options):
         sc = self.state.scenario
         n = sc.node(node)
-        print()
         txt = sc.node_text(node)
-        if txt:
+        if txt and not self._tui_active():
+            print()
             print(txt)
         labels = [(c.key, c.label) for c in n.choices]
         menu = self._choice_menu(n)
         while True:
-            self._show_compact_menu(
-                n.title or n.id, "行動を選択", "次に取る行動を一つ選ぶ", menu,
-            )
+            if not self._draw_tui(
+                    n.title or n.id, "行動を選択", "次に取る行動を一つ選ぶ",
+                    menu, scene=txt):
+                self._show_compact_menu(
+                    n.title or n.id, "行動を選択", "次に取る行動を一つ選ぶ", menu,
+                )
             raw = self._meta_shortcut(input("選択 > ").strip())
             if raw.lower() == "help":
                 self._show_help(menu)
@@ -696,18 +807,20 @@ class ConsoleController:
             if meta == RELOAD:
                 return RELOAD
             if meta == "quit":
-                print("中断する。"); sys.exit(0)
+                self._message("中断する。"); sys.exit(0)
             if meta == "handled":
                 continue
             if raw.isdigit() and 1 <= int(raw) <= len(labels):
                 return labels[int(raw) - 1][0]
-            print("  その選択は使用できません。")
+            self._message("その選択は使用できません。")
 
     def combat_command(self, state, enemies):
-        print()
         alive = [e for e in enemies if e.alive]
-        print("  ▼ 戦闘 —— " + " / ".join(f"{e.name_ja}(HP{max(0, e.hp)})" for e in alive))
-        print(f"     H: HP {state.hp}/{state.hp_max}  MP {state.mp}/{state.mp_max}  薬草 {state.herbs}")
+        if not self._tui_active():
+            print()
+            print("  ▼ 戦闘 —— " + " / ".join(f"{e.name_ja}(HP{max(0, e.hp)})" for e in alive))
+            print(f"     H: HP {state.hp}/{state.hp_max}  MP {state.mp}/{state.mp_max}  "
+                  f"{self._recovery_item_name()} {state.herbs}")
         while True:
             opts = self._combat_options(state)
             menu = self._combat_menu(state, enemies)
@@ -719,31 +832,36 @@ class ConsoleController:
                 continue
             meta = self._meta(raw)
             if meta == RELOAD:
-                print("  （戦闘中のロードはこの実装では非対応。安全な選択肢で load を）")
+                self._message("戦闘中のロードは非対応。安全な選択肢で load を。")
                 continue
             if meta == "quit":
-                print("中断する。"); sys.exit(0)
+                self._message("中断する。"); sys.exit(0)
             if meta == "handled":
                 continue
             if raw in opts:
                 return raw
             if raw == "magic" and state.mp < MP_COST:
-                print(f"  MP が足りない（{MP_COST} 必要・I-2）。魔法は選べない。")
+                self._message(f"MP が足りない（{MP_COST} 必要・I-2）。魔法は選べない。")
                 continue
-            print("  その選択は使用できません。")
+            self._message("その選択は使用できません。")
 
 
-def play_interactive(seed: int, scenario_id: str = DEFAULT_SCENARIO):
+def play_interactive(seed: int, scenario_id: str = DEFAULT_SCENARIO, ui_mode: str = "menu"):
     scenario = load_scenario(scenario_id)
     state = GameState(seed, scenario=scenario)
     state.respawn_on_defeat = True
     save_dir = os.path.join(LOG_DIR, "saves")
-    controller = ConsoleController(state, save_dir)  # ← ここで presenter を装着
-    print("=" * 60)
-    print(f"  Ordia — {scenario.title}（seed={seed}・LLM 不使用）")
-    print("=" * 60)
-    if scenario.intro:
-        print(scenario.intro)
+    controller = ConsoleController(state, save_dir, ui_mode=ui_mode)
+    if controller._tui_active():
+        controller.announce(f"Ordia — {scenario.title}（seed={seed}・LLM 不使用）")
+        if scenario.intro:
+            controller.announce(scenario.intro)
+    else:
+        print("=" * 60)
+        print(f"  Ordia — {scenario.title}（seed={seed}・LLM 不使用）")
+        print("=" * 60)
+        if scenario.intro:
+            print(scenario.intro)
     # 探索フェーズは run_session が controller.explores() を呼んで進める
     # （敗北後もそこへ戻る＝Fix3）。番号で選ぶ。
     result = run_session(state, controller)
@@ -775,12 +893,12 @@ def list_explore_and_pick(controller: ConsoleController):
         if raw.isdigit() and 1 <= int(raw) <= len(order):
             key = order[int(raw) - 1]
             if key in picked:
-                print("  それは選択済み。")
+                controller._message("それは選択済み。")
                 continue
             picked.append(key)
-            print(f"  → {sc.village_option(key).get('text', '')}")
+            controller._message(sc.village_option(key).get("text", ""))
         else:
-            print("  その選択は使用できません。")
+            controller._message("その選択は使用できません。")
     return picked
 
 
@@ -802,6 +920,8 @@ def main(argv):
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--scenario", default=DEFAULT_SCENARIO,
                     help="scenarios/<id>.yaml を選ぶ（既定: goblin）")
+    ap.add_argument("--ui", choices=("menu", "tui"), default="menu",
+                    help="対話UI（既定: menu）")
     ap.add_argument("--replay", action="store_true", help="seed=7 の参照入力列を自動再生してログ出力")
     args = ap.parse_args(argv)
 
@@ -814,7 +934,7 @@ def main(argv):
               f"（{len(state.log)} events, ending={state.log[-1].get('result')}）")
         return 0
 
-    play_interactive(args.seed, scenario_id=args.scenario)
+    play_interactive(args.seed, scenario_id=args.scenario, ui_mode=args.ui)
     return 0
 
 

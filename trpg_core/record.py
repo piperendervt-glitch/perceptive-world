@@ -106,14 +106,14 @@ def save_fixture(fixture: dict, path: str) -> str:
     return path
 
 
-def _record_interactive(scenario_id: str, seed: int) -> dict:
+def _record_interactive(scenario_id: str, seed: int, ui_mode: str = "menu") -> dict:
     """対話プレイを録画する（ConsoleController をラップ）。"""
     from .session import GameState, ConsoleController, run_session, LOG_DIR
     from .scenario_loader import load_scenario
     scenario = load_scenario(scenario_id)
     state = GameState(seed, scenario=scenario)
     state.respawn_on_defeat = True
-    console = ConsoleController(state, os.path.join(LOG_DIR, "saves"))
+    console = ConsoleController(state, os.path.join(LOG_DIR, "saves"), ui_mode=ui_mode)
     rec = RecordingController(console, scenario)
     print("=" * 60)
     print(f"  録画モード — {scenario.title}（seed={seed}）")
@@ -139,13 +139,15 @@ def main(argv):
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--inputs", help="型付き入力ファイル（1 行 1 入力）。省略時は --play")
     ap.add_argument("--play", action="store_true", help="対話プレイを録画する")
+    ap.add_argument("--ui", choices=("menu", "tui"), default="menu",
+                    help="対話録画のUI（既定: menu）")
     ap.add_argument("--out", help="出力パス（省略時は tests/fixtures/<scenario>_seed<seed>.json）")
     args = ap.parse_args(argv)
 
     out = args.out or os.path.join(FIXTURE_DIR, f"{args.scenario}_seed{args.seed}.json")
 
     if args.play or not args.inputs:
-        fixture = _record_interactive(args.scenario, args.seed)
+        fixture = _record_interactive(args.scenario, args.seed, ui_mode=args.ui)
     else:
         with open(args.inputs, "r", encoding="utf-8") as f:
             inputs = [ln.strip() for ln in f if ln.strip() and not ln.lstrip().startswith("#")]
