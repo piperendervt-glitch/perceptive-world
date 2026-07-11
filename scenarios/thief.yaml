@@ -49,6 +49,17 @@ enemies:                      # 盗賊団（自前の数値。goblin とは別�
   thug:    {name: "荒くれの盗賊", hp: 6,  atk: 1, dmg: [1, 3], target: 7}
   boss:    {name: "盗賊の頭領",   hp: 20, atk: 2, dmg: [2, 5], target: 8}
 
+map:                          # 宿場町の空間構造（真実源）。出立前の支度を歩いて回る。
+  start: square
+  locations:
+    square:    {name: "宿場の辻",           exits: {north: inn, east: smithy, south: wayshrine, west: survivor}}
+    inn:       {name: "旅籠",               exits: {south: square, north: ridge}, action: poultice}
+    ridge:     {name: "見晴らしの尾根",     exits: {south: inn},                  action: casing}
+    smithy:    {name: "鍛冶場",             exits: {west: square},                action: spike}
+    wayshrine: {name: "道祖神の辻堂",       exits: {north: square},               action: charm}
+    survivor:  {name: "隊商の生き残りの宿", exits: {east: square, west: trailhead}, action: map}
+    trailhead: {name: "廃坑への坑口道",     exits: {east: survivor}, leads_to_adventure: true}
+
 start_node: gate
 
 nodes:

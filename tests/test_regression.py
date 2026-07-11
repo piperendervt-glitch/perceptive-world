@@ -190,6 +190,54 @@ def test_thief_save_load_rng():
     assert other.hp == state.hp and other.mp == state.mp
 
 
+# ---------------------------------------------------------------------------
+# 9) 簡易地図（M1）: 真実源/ビュー分離・移動・save/load に現在地が含まれる
+# ---------------------------------------------------------------------------
+
+def test_map_navigation():
+    from trpg_core.scenario_loader import load_scenario
+    from trpg_core.map import build_map
+    from trpg_core.map_view import render_map
+    sc = load_scenario("goblin")
+    gm = build_map(sc)
+    assert gm.current == sc.map_start == "plaza"
+    # 移動できる／行けない方角は False
+    assert gm.move("north") and gm.current == "well"
+    assert gm.move("north") and gm.current == "lookout"
+    assert gm.here().action == "scout"
+    assert gm.move("north") is False           # 物見櫓から北は行き止まり
+    # ビューは真実源を書き換えない（render 前後で current 不変）
+    before = gm.current
+    _ = render_map(gm)
+    assert gm.current == before
+    # 出口の先へ本編ゲートが辿れる
+    gm2 = build_map(sc, "elderhouse")
+    assert gm2.move("west") and gm2.here().leads_to_adventure
+
+
+def test_map_actions_cover_explores():
+    # 全探索 option が地図上のどこかの action に対応し、本編ゲートが1つある
+    from trpg_core.scenario_loader import load_scenario
+    for sid in ("goblin", "thief"):
+        sc = load_scenario(sid)
+        assert sc.has_map, f"{sid} に map セクションが無い"
+        actions = {ld.get("action") for ld in sc.map_locations.values() if ld.get("action")}
+        assert actions == set(sc.village_order), f"{sid}: action と探索 option が不一致"
+        gates = [lid for lid, ld in sc.map_locations.items() if ld.get("leads_to_adventure")]
+        assert len(gates) == 1, f"{sid}: 本編ゲートは1つであるべき"
+
+
+def test_map_current_in_save_load():
+    from trpg_core.scenario_loader import load_scenario
+    state = GameState(7, scenario=load_scenario("goblin"))
+    state.location = "lookout"                  # 現在地を動かす
+    snap = json.loads(json.dumps(state.snapshot(), ensure_ascii=False))
+    assert snap["location"] == "lookout", "snapshot に現在地(location)が含まれない"
+    other = GameState(999, scenario=load_scenario("goblin"))
+    other.restore(snap)
+    assert other.location == "lookout", "restore で現在地が復元されない"
+
+
 def _run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failed = 0

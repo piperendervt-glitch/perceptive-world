@@ -34,6 +34,14 @@ LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
 RELOAD = "__reload__"
 DEFAULT_SCENARIO = "goblin"
 
+# 村の地図移動の方角エイリアス（英語/略/日本語）。地図移動は乱数を消費しない（UI のみ）。
+_DIR_ALIAS = {
+    "north": "north", "n": "north", "北": "north", "up": "north",
+    "south": "south", "s": "south", "南": "south", "down": "south",
+    "east": "east", "e": "east", "東": "east", "right": "east",
+    "west": "west", "w": "west", "西": "west", "left": "west",
+}
+
 
 # ---------------------------------------------------------------------------
 # ゲーム状態
@@ -62,6 +70,8 @@ class GameState:
         # 進行
         self.turn = 0
         self.node = scenario.start_node
+        # 村の現在地（地図の真実源＝GameMap の current をここに永続化。save/load 対象）。
+        self.location = scenario.map_start if getattr(scenario, "has_map", False) else None
         self.started = False
         self.respawn_on_defeat = False
         self.log: list[dict] = []
@@ -86,12 +96,14 @@ class GameState:
         self.effects = []
         self.herbs = 0
         self.buff_labels = []
+        # 敗北後は村の入口（広場）から歩き直す
+        self.location = self.scenario.map_start if getattr(self.scenario, "has_map", False) else None
 
     # --- save/load（★rng の内部状態 a を含む＝ロード後の乱数列が一致する） ---
     _SNAP_FIELDS = (
         "seed", "hp_max", "mp_max", "hp", "mp", "str", "mag", "vit",
         "effects", "herbs", "buff_labels",
-        "turn", "node", "started", "respawn_on_defeat",
+        "turn", "node", "location", "started", "respawn_on_defeat",
     )
 
     def snapshot(self) -> dict:
@@ -313,11 +325,103 @@ class ConsoleController:
         state.presenter = self.present_event
 
     # --- 探索フェーズ（対話・敗北後もここに戻る＝Fix3） ---
+    #     地図がある場合は「歩いて回る」UI。無ければ従来のリスト選択にフォールバック。
+    #     ★どちらでも返り値は「選んだ探索 key の列」。run_session が village.explore で
+    #       適用する（d6 消費順＝この列の順）。地図は探索を選ぶ UI の変更にすぎない。
     def explores(self):
         sc = self.state.scenario
+        if not getattr(sc, "has_map", False):
+            print()
+            print(f"  ── 支度 —— 出立の前に、{len(sc.village_order)} つから {sc.village_pick_count} つ選ぶ ──")
+            return list_explore_and_pick(self)
+        return self._walk_village(sc)
+
+    def _walk_village(self, sc):
+        from .map import build_map
+        if not self.state.location:
+            self.state.location = sc.map_start
+        gm = build_map(sc, self.state.location)
+        picked: list[str] = []
+        pick_count = sc.village_pick_count
         print()
-        print(f"  ── 支度 —— 出立の前に、{len(sc.village_order)} つから {sc.village_pick_count} つ選ぶ ──")
-        return list_explore_and_pick(self)
+        print(f"  ── 村を歩いて支度する（{pick_count} つ整えて、村の出口から森へ）──")
+        print("     コマンド: go <方角> / 北南東西 / look / do（その場で探索）/ depart（森へ）")
+        self._show_here(gm, sc, picked)
+        while len(picked) <= pick_count:
+            self.state.location = gm.current           # 保存点で現在地を最新化
+            raw = input("> ").strip()
+            low = raw.lower()
+            meta = self._meta(low)
+            if meta == RELOAD:
+                gm.current = self.state.location       # ロードで現在地を復元
+                self._show_here(gm, sc, picked)
+                continue
+            if meta == "quit":
+                print("中断する。"); sys.exit(0)
+            if meta == "handled":
+                continue
+            parts = low.split()
+            cmd = parts[0] if parts else ""
+            if cmd in ("look", "map", "m", "l"):
+                self._show_here(gm, sc, picked)
+            elif cmd in ("go", "move", "g", "walk") and len(parts) >= 2 and parts[1] in _DIR_ALIAS:
+                self._try_move(gm, sc, picked, _DIR_ALIAS[parts[1]])
+            elif low in _DIR_ALIAS:                     # 素の「北」「n」等でも移動
+                self._try_move(gm, sc, picked, _DIR_ALIAS[low])
+            elif cmd in ("do", "explore", "search", "action", "x", "調べる", "聞く"):
+                self._do_action(gm, sc, picked, pick_count)
+            elif cmd in ("depart", "leave", "forest", "森", "発つ"):
+                if self._try_depart(gm, picked, pick_count):
+                    return picked
+            else:
+                print("  go <方角> / look / do / depart（または status / save <名> / load <名> / quit）。")
+        return picked
+
+    def _try_move(self, gm, sc, picked, direction):
+        if gm.move(direction):
+            self.state.location = gm.current
+            self._show_here(gm, sc, picked)
+        else:
+            print("  そちらへは道がない。")
+
+    def _do_action(self, gm, sc, picked, pick_count):
+        key = gm.here().action
+        if not key:
+            print("  ここで特にできることはない。歩いて回ろう。")
+            return
+        if key in picked:
+            print("  それはもう済ませた。")
+            return
+        if len(picked) >= pick_count:
+            print(f"  支度はもう {pick_count} つ整えた。村の出口から森へ発とう（depart）。")
+            return
+        opt = sc.village_option(key)
+        picked.append(key)
+        print(f"  → {opt.get('text', '')}")
+        print(f"  （{opt['name']}：{opt.get('gain', '')}／支度 {len(picked)}/{pick_count}）")
+
+    def _try_depart(self, gm, picked, pick_count):
+        if not gm.here().leads_to_adventure:
+            print("  ここからは森へ発てない。「村の出口（森へ）」まで歩こう。")
+            return False
+        if len(picked) < pick_count:
+            print(f"  まだ支度が {pick_count - len(picked)} つ残っている（各所で do）。")
+            return False
+        print("  ——村を出て、森の道へ。")
+        return True
+
+    def _show_here(self, gm, sc, picked):
+        from .map_view import render_map
+        print()
+        print(render_map(gm))
+        loc = gm.here()
+        if loc.action:
+            opt = sc.village_option(loc.action)
+            mark = "済" if loc.action in picked else "未"
+            print(f"  ここで: {opt['name']}（{opt.get('gain', '')}）[{mark}] —— 'do' で行う")
+        if loc.leads_to_adventure:
+            print("  ここから 'depart' で森へ発てる。")
+        print(f"  支度 {len(picked)}/{sc.village_pick_count}")
 
     # --- 判定・戦闘の結果表示（Fix1）／敗北描写（Fix2） ---
     #     ここは state.log から読む「表示層」。ログ・乱数・判定には一切触れない。

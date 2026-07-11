@@ -51,6 +51,17 @@ enemies:                      # 敵の定義（HP / 命中修正 / ダメージ�
   goblin: {name: "ゴブリン",       hp: 5,  atk: 0, dmg: [1, 2], target: 6}
   chief:  {name: "ゴブリンの頭目", hp: 18, atk: 2, dmg: [2, 5], target: 8}
 
+map:                          # 村の空間構造（真実源）。探索フェーズを歩いて回る舞台。
+  start: plaza                #   各 action は village.options の key に対応（探索の中身は不変）。
+  locations:
+    plaza:       {name: "村の広場",         exits: {north: well, east: herbhut, south: shrine, west: elderhouse}}
+    well:        {name: "古井戸",           exits: {south: plaza, north: lookout}, action: well}
+    lookout:     {name: "物見櫓",           exits: {south: well},                  action: scout}
+    herbhut:     {name: "薬草小屋",         exits: {west: plaza},                  action: herbs}
+    shrine:      {name: "古い祠",           exits: {north: plaza},                 action: shrine}
+    elderhouse:  {name: "村長の家",         exits: {east: plaza, west: forest_gate}, action: elder}
+    forest_gate: {name: "村の出口（森へ）", exits: {east: elderhouse}, leads_to_adventure: true}
+
 start_node: forest
 
 nodes:

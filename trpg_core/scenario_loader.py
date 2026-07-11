@@ -87,6 +87,17 @@ class Scenario:
         for nid, nd in data["nodes"].items():
             self.nodes[nid] = self._build_node(nid, nd)
 
+        # 村の空間構造（任意）。無ければ従来のリスト選択にフォールバックする。
+        mp_data = data.get("map")
+        if mp_data:
+            self.has_map = True
+            self.map_start = mp_data["start"]
+            self.map_locations = {lid: dict(ld) for lid, ld in mp_data["locations"].items()}
+        else:
+            self.has_map = False
+            self.map_start = None
+            self.map_locations = {}
+
     @staticmethod
     def _build_node(nid: str, nd: dict) -> Node:
         if "choices" in nd:
