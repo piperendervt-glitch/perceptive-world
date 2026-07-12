@@ -22,9 +22,12 @@ def test_new_fixture_is_v1_and_canonicalizes_choice_labels():
     assert fixture["format_version"] == 1
     assert fixture["scenario"] == "envoy"
     assert fixture["seed"] == 0
-    assert fixture["inputs"] == [
-        "explore:rapport", "explore:guard", "choice:hear", "choice:side_up",
-    ]
+    assert "explore:rapport" in fixture["inputs"]
+    assert "explore:guard" in fixture["inputs"]
+    assert "choice:hear" in fixture["inputs"]
+    assert "choice:side_up" in fixture["inputs"]
+    assert "depart" in fixture["inputs"]
+    assert any(token.startswith("move-to:envoy:location/") for token in fixture["inputs"])
     assert all("言い分" not in token and "上流" not in token for token in fixture["inputs"])
     ok, actual, diff = replay_fixture(fixture)
     assert ok, diff

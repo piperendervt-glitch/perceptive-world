@@ -8,6 +8,14 @@ import ast
 
 import pytest
 
+from dataclasses import FrozenInstanceError
+
+from trpg_core.input_actions import (
+    ClearFocusAction, DepartAction, ExploreAction, MoveToLocationAction,
+    SetFocusAction, resolve_focus_command, resolve_move_action,
+)
+from trpg_core.world import WorldObjectId
+
 from trpg_core.input_actions import (
     DirectCommand,
     MetaRequest,
@@ -181,3 +189,54 @@ def test_input_module_has_no_ui_presentation_record_or_replay_dependency():
     assert all(not name.startswith("trpg_core") for name in imports)
     assert all(not name.startswith(".") for name in imports)
     assert "explore:" not in source and "choice:" not in source and "combat:" not in source
+# Canonical village boundary -------------------------------------------------
+
+def test_canonical_village_actions_are_frozen_and_resolved():
+    object_id = WorldObjectId("goblin", "location/well")
+    actions = (
+        MoveToLocationAction(object_id), ExploreAction("well"), DepartAction(),
+        SetFocusAction(object_id), ClearFocusAction(),
+    )
+    for action in actions:
+        with pytest.raises(FrozenInstanceError):
+            action.extra = "physical-input"
+    assert actions[0].destination_object_id == object_id
+    assert actions[1].key == "well"
+    assert actions[3].object_id == object_id
+
+
+def test_focus_navigation_cycles_and_rejects_invalid_context():
+    candidates = tuple(WorldObjectId("goblin", f"location/{x}") for x in "abc")
+    original = candidates
+    assert resolve_focus_command("focus next", focused_object_id=None,
+                                 focusable_object_ids=candidates) == SetFocusAction(candidates[0])
+    assert resolve_focus_command("focus prev", focused_object_id=None,
+                                 focusable_object_ids=candidates) == SetFocusAction(candidates[-1])
+    assert resolve_focus_command("focus next", focused_object_id=candidates[-1],
+                                 focusable_object_ids=candidates) == SetFocusAction(candidates[0])
+    assert resolve_focus_command("focus prev", focused_object_id=candidates[0],
+                                 focusable_object_ids=candidates) == SetFocusAction(candidates[-1])
+    assert resolve_focus_command("focus clear", focused_object_id=candidates[0],
+                                 focusable_object_ids=candidates) == ClearFocusAction()
+    assert resolve_focus_command("look", focused_object_id=None,
+                                 focusable_object_ids=candidates) is None
+    assert candidates == original
+    for command, focused, available in (
+        ("focus next", None, ()),
+        ("focus next", WorldObjectId("goblin", "location/x"), candidates),
+        ("focus next", None, (candidates[0], candidates[0])),
+        ("focus foo", None, candidates),
+    ):
+        with pytest.raises(ValueError):
+            resolve_focus_command(command, focused_object_id=focused,
+                                  focusable_object_ids=available)
+
+
+def test_move_resolver_returns_destination_without_mutating_context():
+    destination = WorldObjectId("goblin", "location/well")
+    moves = (("north", destination),)
+    assert resolve_move_action("north", move_destinations=moves) == MoveToLocationAction(destination)
+    assert moves == (("north", destination),)
+    assert resolve_move_action("look", move_destinations=moves) is None
+    with pytest.raises(ValueError):
+        resolve_move_action("south", move_destinations=moves)

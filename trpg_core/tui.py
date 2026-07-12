@@ -284,7 +284,7 @@ def render_screen(model: ScreenModel, width: int, height: int) -> str:
         lines.append(_row(" 最近: —", inner))
     lines.append(sep)
     lines.extend(_row(line, inner) for line in menu_lines)
-    lines.append(_row(" [S] 状態  [H] ヘルプ  [Q] 終了", inner))
+    lines.append(_row(" [S] 状態 [H] ヘルプ [Q] 終了  focus next|prev|clear", inner))
     lines.append(bottom)
     return "\n".join(lines[:height])
 

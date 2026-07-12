@@ -37,16 +37,29 @@ def test_payload_preserves_colons_slashes_and_whitespace():
     assert parse_record_token(token, format_version=1).payload == payload
 
 
-@pytest.mark.parametrize("verb,payload", [("choice", ""), ("choice", None), ("depart", None)])
+@pytest.mark.parametrize("verb,payload", [("choice", ""), ("choice", None), ("unknown", None)])
 def test_serialize_rejects_empty_or_unknown_tokens(verb, payload):
     with pytest.raises(ValueError):
         serialize_record_token(verb, payload)
 
 
 @pytest.mark.parametrize("token", [
-    "choice:", "unknown:value", "focus:set:x", "focus:clear", "move-to:x",
-    "depart", "observe:x", "inspect:x", " choice:key", "choice",
+    "choice:", "unknown:value", "focus:set:x", "move-to:x",
+    "focus:clear:extra", "depart:extra", "observe:x", "inspect:x", " choice:key", "choice",
 ])
 def test_parse_rejects_malformed_unknown_and_future_tokens(token):
     with pytest.raises(ValueError):
         parse_record_token(token, format_version=1)
+
+
+@pytest.mark.parametrize("verb,payload", [
+    ("move-to", "goblin:location/well"),
+    ("focus:set", "goblin:location/well"),
+    ("focus:clear", None),
+    ("depart", None),
+])
+def test_v1_village_tokens_round_trip(verb, payload):
+    token = serialize_record_token(verb, payload, format_version=1)
+    assert parse_record_token(token, format_version=1) == ParsedRecordToken(verb, payload)
+    with pytest.raises(ValueError):
+        parse_record_token(token, format_version=0)

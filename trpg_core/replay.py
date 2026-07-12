@@ -31,11 +31,17 @@ import json
 import os
 from collections import deque
 
+from .input_actions import (
+    ClearFocusAction, DepartAction, ExploreAction, MoveToLocationAction,
+    SetFocusAction,
+)
+
 from .record_codec import (
     parse_record_token,
     record_format_version,
     serialize_record_token,
 )
+from .world import parse_world_object_id
 
 # --- イベント分類（型で判定。ログ本体は書き換えない）-----------------------
 # 描写イベント: Step 3 で GM(LLM) が生成する自由記述の型。今は未使用（描写は presenter 側）。
@@ -82,6 +88,7 @@ class FixtureController:
         self.q = deque(inputs)
         self.sc = scenario
         self.format_version = format_version
+        self.legacy_village_batch = False
         self.canonical_inputs: list[str] = []
 
     def explores(self):
@@ -94,6 +101,84 @@ class FixtureController:
             keys.append(parsed.payload)
             self.canonical_inputs.append(serialize_record_token("explore", parsed.payload))
         return keys
+
+    def village_action(self, context, **_display):
+        if self.format_version == 0:
+            if not self.q:
+                return self._legacy_depart(context)
+            parsed = parse_record_token(self.q[0], format_version=0)
+            if parsed.verb != "explore":
+                return self._legacy_depart(context)
+            if context.current_location_object_id is not None:
+                target = next(
+                    (location_id for location_id, data in self.sc.map_locations.items()
+                     if data.get("action") == parsed.payload),
+                    None,
+                )
+                current = context.current_location_object_id.local_id[len("location/"):]
+                if target is not None and target != current:
+                    first = self._first_step(current, target)
+                    object_id = parse_world_object_id(
+                        f"{self.sc.id}:location/{first}"
+                    )
+                    self.canonical_inputs.append(serialize_record_token(
+                        "move-to", f"{self.sc.id}:location/{first}"))
+                    return MoveToLocationAction(object_id)
+            self.q.popleft()
+            self.canonical_inputs.append(serialize_record_token("explore", parsed.payload))
+            return ExploreAction(parsed.payload)
+        if not self.q:
+            raise ValueError("入力列が尽きた（village event を要求）")
+        item = self.q[0]
+        parsed = parse_record_token(item, format_version=1)
+        if parsed.verb in {"choice", "combat"}:
+            raise ValueError(f"village中に不正な入力: {item!r}")
+        self.q.popleft()
+        if parsed.verb == "move-to":
+            event = MoveToLocationAction(parse_world_object_id(parsed.payload))
+        elif parsed.verb == "focus:set":
+            event = SetFocusAction(parse_world_object_id(parsed.payload))
+        elif parsed.verb == "focus:clear":
+            event = ClearFocusAction()
+        elif parsed.verb == "explore":
+            event = ExploreAction(parsed.payload)
+        elif parsed.verb == "depart":
+            event = DepartAction()
+        else:
+            raise ValueError(f"unsupported village token: {item!r}")
+        self.canonical_inputs.append(item)
+        return event
+
+    def _legacy_depart(self, context):
+        if context.current_location_object_id is not None and not context.can_depart:
+            current = context.current_location_object_id.local_id[len("location/"):]
+            target = next(
+                (location_id for location_id, data in self.sc.map_locations.items()
+                 if data.get("leads_to_adventure")),
+                None,
+            )
+            if target is not None and target != current:
+                first = self._first_step(current, target)
+                payload = f"{self.sc.id}:location/{first}"
+                self.canonical_inputs.append(serialize_record_token("move-to", payload))
+                return MoveToLocationAction(parse_world_object_id(payload))
+        self.canonical_inputs.append(serialize_record_token("depart"))
+        return DepartAction()
+
+    def _first_step(self, start, target):
+        pending = deque([(start, None)])
+        seen = {start}
+        while pending:
+            location, first = pending.popleft()
+            for destination in self.sc.map_locations[location].get("exits", {}).values():
+                if destination in seen:
+                    continue
+                step = destination if first is None else first
+                if destination == target:
+                    return step
+                seen.add(destination)
+                pending.append((destination, step))
+        raise ValueError(f"legacy explore destination is unreachable: {target!r}")
 
     def choice(self, node, options):
         item = self._pop("choice")

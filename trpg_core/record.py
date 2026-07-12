@@ -23,11 +23,17 @@ import json
 import os
 import sys
 
+from .input_actions import (
+    ClearFocusAction, DepartAction, ExploreAction, MoveToLocationAction,
+    SetFocusAction,
+)
+
 from .replay import FixtureController
 from .record_codec import (
     CURRENT_RECORD_FORMAT_VERSION,
     serialize_record_token,
 )
+from .world import serialize_world_object_id
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -52,6 +58,29 @@ class RecordingController:
         keys = list(self.base.explores())
         self.inputs.extend(serialize_record_token("explore", k) for k in keys)
         return keys
+
+    def begin_village(self):
+        if hasattr(self.base, "begin_village"):
+            self.base.begin_village()
+
+    def village_action(self, context, **display):
+        event = self.base.village_action(context, **display)
+        if isinstance(event, MoveToLocationAction):
+            token = serialize_record_token(
+                "move-to", serialize_world_object_id(event.destination_object_id))
+        elif isinstance(event, SetFocusAction):
+            token = serialize_record_token(
+                "focus:set", serialize_world_object_id(event.object_id))
+        elif isinstance(event, ClearFocusAction):
+            token = serialize_record_token("focus:clear")
+        elif isinstance(event, ExploreAction):
+            token = serialize_record_token("explore", event.key)
+        elif isinstance(event, DepartAction):
+            token = serialize_record_token("depart")
+        else:
+            return event
+        self.inputs.append(token)
+        return event
 
     def choice(self, node, options):
         key = self.base.choice(node, options)

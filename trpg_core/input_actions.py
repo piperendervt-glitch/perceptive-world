@@ -10,6 +10,8 @@ from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from typing import Literal, TypeAlias, cast
 
+from .world import WorldObjectId
+
 MetaCommand: TypeAlias = Literal["status", "help", "save", "load", "quit"]
 MoveDirection: TypeAlias = Literal["north", "east", "south", "west"]
 CombatCommand: TypeAlias = Literal["attack", "magic", "herb", "flee"]
@@ -74,6 +76,49 @@ class DirectCommand:
 InputToken: TypeAlias = SelectMenuIndex | DirectCommand | MetaRequest
 
 
+@dataclass(frozen=True)
+class MoveToLocationAction:
+    destination_object_id: WorldObjectId
+
+
+@dataclass(frozen=True)
+class ExploreAction:
+    key: str
+
+
+@dataclass(frozen=True)
+class DepartAction:
+    pass
+
+
+@dataclass(frozen=True)
+class SetFocusAction:
+    object_id: WorldObjectId
+
+
+@dataclass(frozen=True)
+class ClearFocusAction:
+    pass
+
+
+VillageControllerEvent: TypeAlias = (
+    MoveToLocationAction | ExploreAction | DepartAction
+    | SetFocusAction | ClearFocusAction
+)
+
+
+@dataclass(frozen=True)
+class VillageInputContext:
+    scenario_id: str
+    current_location_object_id: WorldObjectId | None
+    focused_object_id: WorldObjectId | None
+    focusable_object_ids: tuple[WorldObjectId, ...]
+    move_destinations: tuple[tuple[MoveDirection, WorldObjectId], ...]
+    explore_keys: tuple[str, ...]
+    current_explore_key: str | None
+    can_depart: bool
+
+
 def resolve_meta_request(raw: str) -> MetaRequest | None:
     """既存shortcutと直接meta commandを分類する。I/Oや状態変更は行わない。"""
 
@@ -129,6 +174,48 @@ def resolve_direction(text: str) -> MoveDirection | None:
             return None
         token = parts[1]
     return _DIRECTION_ALIASES.get(token)
+
+
+def resolve_focus_command(
+    command: str,
+    *,
+    focused_object_id: WorldObjectId | None,
+    focusable_object_ids: Sequence[WorldObjectId],
+) -> SetFocusAction | ClearFocusAction | None:
+    parts = str(command).strip().lower().split()
+    if not parts or parts[0] != "focus":
+        return None
+    if len(parts) != 2 or parts[1] not in {"next", "prev", "clear"}:
+        raise ValueError("invalid focus command")
+    candidates = tuple(focusable_object_ids)
+    if len(set(candidates)) != len(candidates):
+        raise ValueError("duplicate focus candidates")
+    if parts[1] == "clear":
+        return ClearFocusAction()
+    if not candidates:
+        raise ValueError("no focus candidates")
+    if focused_object_id is not None and focused_object_id not in candidates:
+        raise ValueError("focused object is not a current candidate")
+    if focused_object_id is None:
+        index = 0 if parts[1] == "next" else -1
+    else:
+        offset = 1 if parts[1] == "next" else -1
+        index = (candidates.index(focused_object_id) + offset) % len(candidates)
+    return SetFocusAction(candidates[index])
+
+
+def resolve_move_action(
+    command: str,
+    *,
+    move_destinations: Sequence[tuple[MoveDirection, WorldObjectId]],
+) -> MoveToLocationAction | None:
+    direction = resolve_direction(command)
+    if direction is None:
+        return None
+    matches = tuple(dest for candidate, dest in move_destinations if candidate == direction)
+    if len(matches) != 1:
+        raise ValueError("direction does not resolve to exactly one destination")
+    return MoveToLocationAction(matches[0])
 
 
 def resolve_combat_command(

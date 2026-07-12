@@ -23,13 +23,21 @@ from collections.abc import Collection
 
 from .combat import run_combat
 from .input_actions import (
+    ClearFocusAction,
+    DepartAction,
     DirectCommand,
+    ExploreAction,
     MetaRequest,
+    MoveToLocationAction,
     SelectMenuIndex,
+    SetFocusAction,
+    VillageInputContext,
     parse_raw_input,
     resolve_combat_command,
     resolve_direction,
+    resolve_focus_command,
     resolve_menu_index,
+    resolve_move_action,
 )
 from .rng import Rng
 from .rules import MP_COST, modifier, roll, has_recon
@@ -37,7 +45,10 @@ from .scenario_loader import load_scenario
 from .world import (
     FocusState,
     WorldObjectId,
+    build_map_location_world_object_specs,
     clear_focus as resolve_clear_focus,
+    focusable_world_object_ids_for_current_location,
+    location_world_object_id,
     set_focus as resolve_set_focus,
 )
 
@@ -176,12 +187,21 @@ class ScriptedController:
     """入力列を機械再生する（回帰・シミュレーション用）。自由記述なし。"""
 
     def __init__(self, explores, node_choices, combat_cmds):
+        self.legacy_village_batch = True
         self._explores = list(explores)
+        self._village_events = deque()
         self._choices = deque(node_choices)   # ノード選択（遭遇順）
         self._cmds = deque(combat_cmds)        # 戦闘コマンド（全戦闘を通じた順）
 
     def explores(self):
         return self._explores
+
+    def begin_village(self):
+        self._village_events = deque(ExploreAction(key) for key in self._explores)
+        self._village_events.append(DepartAction())
+
+    def village_action(self, context, **_display):
+        return self._village_events.popleft()
 
     def choice(self, node, options):
         return self._choices.popleft()
@@ -194,10 +214,19 @@ class PolicyController:
     """ヘッドレス自動プレイの方針（simulate 用）。分岐は常に隠密ルートを選ぶ。"""
 
     def __init__(self, build):
+        self.legacy_village_batch = True
         self._build = list(build)
+        self._village_events = deque()
 
     def explores(self):
         return self._build
+
+    def begin_village(self):
+        self._village_events = deque(ExploreAction(key) for key in self._build)
+        self._village_events.append(DepartAction())
+
+    def village_action(self, context, **_display):
+        return self._village_events.popleft()
 
     def choice(self, node, options):
         if node == "forest":
@@ -227,11 +256,109 @@ def _goto(state: GameState, node_id: str) -> None:
     state.emit(type="enter_node", node=node_id)
 
 
-def _run_village(state: GameState, controller) -> None:
-    """探索フェーズ（出立前／敗北後の再起）。controller が pick を供給する。"""
+def _village_context(state, game_map, picked) -> VillageInputContext:
+    sc = state.scenario
+    if game_map is None:
+        focusable = ()
+        moves = ()
+        current_id = None
+        current_explore = None
+        explore_keys = tuple(k for k in sc.village_order if k not in picked)
+        can_depart = len(picked) >= sc.village_pick_count
+    else:
+        specs = build_map_location_world_object_specs(sc.id, game_map)
+        focusable = focusable_world_object_ids_for_current_location(sc.id, game_map, specs)
+        current_id = location_world_object_id(sc.id, game_map.current)
+        moves = tuple(
+            (direction, location_world_object_id(sc.id, destination))
+            for direction, destination in game_map.exits().items()
+        )
+        key = game_map.here().action
+        current_explore = key if key and key not in picked else None
+        explore_keys = (current_explore,) if current_explore is not None else ()
+        can_depart = (game_map.here().leads_to_adventure
+                      and len(picked) >= sc.village_pick_count)
+    return VillageInputContext(
+        scenario_id=sc.id,
+        current_location_object_id=current_id,
+        focused_object_id=state.focus_state.focused_object_id,
+        focusable_object_ids=focusable,
+        move_destinations=moves,
+        explore_keys=explore_keys,
+        current_explore_key=current_explore,
+        can_depart=can_depart,
+    )
+
+
+def _apply_village_action(state, game_map, picked, action, *, legacy_batch=False) -> bool:
+    """Validate and apply one canonical event. Return True only for depart."""
     from . import village
-    for key in controller.explores():
-        village.explore(state, key)
+    context = _village_context(state, game_map, picked)
+    if isinstance(action, SetFocusAction):
+        if game_map is None:
+            raise ValueError("focus requires an active map")
+        state.set_focused_object(action.object_id,
+                                 focusable_object_ids=context.focusable_object_ids)
+        return False
+    if isinstance(action, ClearFocusAction):
+        state.clear_focused_object()
+        return False
+    if isinstance(action, MoveToLocationAction):
+        if game_map is None:
+            raise ValueError("move requires an active map")
+        if action.destination_object_id.scenario_id != state.scenario.id:
+            raise ValueError("move destination belongs to another scenario")
+        if not action.destination_object_id.local_id.startswith("location/"):
+            raise ValueError("move destination is not a location")
+        if game_map.current != state.location:
+            raise ValueError("map and state location disagree")
+        destination = action.destination_object_id.local_id[len("location/"):]
+        if destination not in game_map.locations:
+            raise ValueError("move destination does not exist")
+        if destination not in game_map.exits().values():
+            raise ValueError("move destination is unreachable")
+        game_map.current = destination
+        state.transition_location(destination)
+        return False
+    if isinstance(action, ExploreAction):
+        available = (tuple(k for k in state.scenario.village_order if k not in picked)
+                     if legacy_batch else context.explore_keys)
+        if action.key not in available:
+            raise ValueError("explore key is not currently available")
+        village.explore(state, action.key)
+        picked.append(action.key)
+        return False
+    if isinstance(action, DepartAction):
+        if legacy_batch and len(picked) >= state.scenario.village_pick_count:
+            return True
+        if not context.can_depart:
+            raise ValueError("cannot depart from the current village state")
+        return True
+    raise ValueError(f"unsupported village action: {action!r}")
+
+
+def _run_village(state: GameState, controller) -> None:
+    """Engine-owned sequential village event loop."""
+    from .map import build_map
+    sc = state.scenario
+    game_map = build_map(sc, state.location or sc.map_start) if sc.has_map else None
+    if game_map is not None and state.location is None:
+        state.transition_location(game_map.current)
+    picked = []
+    if hasattr(controller, "begin_village"):
+        controller.begin_village()
+    while True:
+        context = _village_context(state, game_map, picked)
+        action = controller.village_action(
+            context, game_map=game_map, picked=tuple(picked),
+        )
+        if action == RELOAD:
+            game_map = build_map(sc, state.location or sc.map_start) if sc.has_map else None
+            continue
+        if _apply_village_action(
+                state, game_map, picked, action,
+                legacy_batch=bool(getattr(controller, "legacy_village_batch", False))):
+            return
 
 
 def _resolve_check(state: GameState, check: dict) -> bool:
@@ -661,6 +788,70 @@ class ConsoleController:
     #     地図がある場合は「歩いて回る」UI。無ければ従来のリスト選択にフォールバック。
     #     ★どちらでも返り値は「選んだ探索 key の列」。run_session が village.explore で
     #       適用する（d6 消費順＝この列の順）。地図は探索を選ぶ UI の変更にすぎない。
+    def village_action(self, context, *, game_map=None, picked=()):
+        """Resolve one physical input into one canonical event without applying it."""
+        sc = self.state.scenario
+        while True:
+            if game_map is not None:
+                menu = self._village_menu(game_map, sc, list(picked))
+                self._show_village_menu(game_map, sc, list(picked), menu)
+            else:
+                menu = self._list_village_menu(sc, list(picked))
+                if context.can_depart:
+                    menu.append((f"{self._departure_destination(sc)}へ向かう",
+                                 "depart", "拠点から冒険へ出立する"))
+                self._show_list_village_menu(sc, list(picked), menu)
+            original, token = self._read_input_token()
+            raw = self._command_from_token(token, menu, raw=original)
+            low = raw.lower() if raw is not None else ""
+            if low == "help":
+                self._show_help(menu)
+                continue
+            meta = self._meta(low)
+            if meta == RELOAD:
+                return RELOAD
+            if meta == "quit":
+                self._message("中断する."); sys.exit(0)
+            if meta == "handled":
+                continue
+            try:
+                focus = resolve_focus_command(
+                    low,
+                    focused_object_id=context.focused_object_id,
+                    focusable_object_ids=context.focusable_object_ids,
+                )
+                if focus is not None:
+                    return focus
+            except ValueError as exc:
+                self._message(str(exc))
+                continue
+            try:
+                move = resolve_move_action(low, move_destinations=context.move_destinations)
+                if move is not None:
+                    return move
+            except ValueError:
+                self._message("そちらへは道がない。")
+                continue
+            cmd = low.split()[0] if low.split() else ""
+            if cmd in ("do", "explore", "search", "action", "x", "調べる", "聞く"):
+                if context.current_explore_key is None:
+                    self._message("ここで実行できる支度はない。")
+                    continue
+                return ExploreAction(context.current_explore_key)
+            if game_map is None and isinstance(token, SelectMenuIndex):
+                offset = token.index - 1
+                if 0 <= offset < len(context.explore_keys):
+                    return ExploreAction(context.explore_keys[offset])
+            if cmd in ("depart", "leave", "forest", "森", "発つ"):
+                if context.can_depart:
+                    return DepartAction()
+                self._message("まだ出立できない。")
+                continue
+            if cmd in ("look", "map", "m", "l") and game_map is not None:
+                self._show_here(game_map, sc, list(picked))
+                continue
+            self._message("その選択は使用できません。")
+
     def explores(self):
         sc = self.state.scenario
         if not getattr(sc, "has_map", False):
