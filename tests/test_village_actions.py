@@ -13,7 +13,9 @@ from trpg_core.map import build_map
 from trpg_core.record import RecordingController
 from trpg_core.replay import FixtureController
 from trpg_core.scenario_loader import load_scenario
-from trpg_core.session import GameState, _apply_village_action, _village_context
+from trpg_core.session import (
+    GameState, _apply_village_action, _run_village, _village_context,
+)
 from trpg_core.session import ConsoleController
 from trpg_core.world import location_world_object_id
 
@@ -105,3 +107,22 @@ def test_console_returns_one_canonical_event_without_applying_it(monkeypatch, ra
     event = controller.village_action(context, game_map=game_map, picked=())
     assert isinstance(event, expected_type)
     assert _fingerprint(state, game_map) == before
+
+
+def test_post_apply_observer_reads_authoritative_focus_and_skips_rejected_event():
+    state, _game_map = _setup()
+    plaza = location_world_object_id("goblin", "plaza")
+    class Controller:
+        def __init__(self, events):
+            self.events = iter(events)
+        def village_action(self, context, **display):
+            return next(self.events)
+    observed = []
+    controller = Controller((SetFocusAction(plaza), ClearFocusAction(),
+                             SetFocusAction(location_world_object_id("goblin", "well"))))
+    with pytest.raises(ValueError):
+        _run_village(
+            state, controller,
+            on_village_event_applied=lambda event, focused: observed.append((event, focused)),
+        )
+    assert observed == [(SetFocusAction(plaza), plaza), (ClearFocusAction(), None)]

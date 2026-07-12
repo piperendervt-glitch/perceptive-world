@@ -1,0 +1,36 @@
+{
+ "format_version": 1,
+ "scenario": "envoy",
+ "seed": 0,
+ "inputs": [
+  "move-to:envoy:location/teahouse",
+  "focus:set:envoy:location/teahouse",
+  "focus:clear",
+  "explore:rapport",
+  "move-to:envoy:location/waypoint",
+  "move-to:envoy:location/shrine",
+  "explore:guard",
+  "move-to:envoy:location/waypoint",
+  "move-to:envoy:location/armory",
+  "move-to:envoy:location/road",
+  "depart",
+  "choice:hear",
+  "choice:side_up"
+ ],
+ "expected_log": [
+  {"t": 0, "type": "session_start", "seed": 0},
+  {"t": 0, "type": "explore", "place": "rapport", "gain": "交渉判定 +2（下調べの分）/ 決裂して斬られかけても初撃を見切る"},
+  {"t": 0, "type": "explore", "place": "guard", "gain": "決裂時、全命中判定 +1"},
+  {"t": 1, "type": "enter_node", "node": "table"},
+  {"t": 2, "type": "choice", "node": "table", "label": "双方の言い分を見立てて説く【mag 判定 / 目標 8：弁舌】"},
+  {"t": 2, "type": "check", "tag": "insight", "dice": [2, 1], "sum": 3, "modifier": 2, "total": 5, "target": 8, "crit": false, "fumble": false, "success": false},
+  {"t": 2, "type": "enter_node", "node": "heated"},
+  {"t": 3, "type": "choice", "node": "heated", "label": "上流に理ありと裁く（片方に加担）"},
+  {"t": 3, "type": "enter_node", "node": "side_upstream"},
+  {"t": 3, "type": "ending", "result": "partisan"}
+ ],
+ "expected_focus_trace": [
+  "envoy:location/teahouse",
+  null
+ ]
+}

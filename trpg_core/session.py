@@ -337,7 +337,7 @@ def _apply_village_action(state, game_map, picked, action, *, legacy_batch=False
     raise ValueError(f"unsupported village action: {action!r}")
 
 
-def _run_village(state: GameState, controller) -> None:
+def _run_village(state: GameState, controller, *, on_village_event_applied=None) -> None:
     """Engine-owned sequential village event loop."""
     from .map import build_map
     sc = state.scenario
@@ -355,9 +355,12 @@ def _run_village(state: GameState, controller) -> None:
         if action == RELOAD:
             game_map = build_map(sc, state.location or sc.map_start) if sc.has_map else None
             continue
-        if _apply_village_action(
+        departed = _apply_village_action(
                 state, game_map, picked, action,
-                legacy_batch=bool(getattr(controller, "legacy_village_batch", False))):
+                legacy_batch=bool(getattr(controller, "legacy_village_batch", False)))
+        if on_village_event_applied is not None:
+            on_village_event_applied(action, state.focus_state.focused_object_id)
+        if departed:
             return
 
 
@@ -395,7 +398,9 @@ def _handle_decision(state: GameState, controller, node) -> str | None:
     return None
 
 
-def _handle_combat(state: GameState, controller, node) -> str | None:
+def _handle_combat(
+    state: GameState, controller, node, *, on_village_event_applied=None,
+) -> str | None:
     """戦闘ノードを解決する。終局なら "clear"/"defeat" を、継続なら None を返す。"""
     sc = state.scenario
     first_free = node.recon_free_first and has_recon(state)
@@ -417,7 +422,10 @@ def _handle_combat(state: GameState, controller, node) -> str | None:
         state.clear_focused_object()
         state.reset_for_village()
         state.emit(type="respawn", hp=state.hp, mp=state.mp)
-        _run_village(state, controller)      # 探索を選び直す（on_defeat_return: village）
+        _run_village(
+            state, controller,
+            on_village_event_applied=on_village_event_applied,
+        )      # 探索を選び直す（on_defeat_return: village）
         state.clear_focused_object()          # village から本編へ移る境界
         state.turn += 1
         _goto(state, sc.start_node)
@@ -426,7 +434,7 @@ def _handle_combat(state: GameState, controller, node) -> str | None:
     return "defeat"
 
 
-def run_session(state: GameState, controller) -> str:
+def run_session(state: GameState, controller, *, on_village_event_applied=None) -> str:
     """シナリオのノードグラフを歩く。戻り値: "clear" / "defeat"。
 
     ノード種別（decision / combat / ending）で分岐するだけの汎用ループ。
@@ -435,7 +443,10 @@ def run_session(state: GameState, controller) -> str:
     if not state.started:
         state.started = True
         state.emit(type="session_start", seed=state.seed)
-        _run_village(state, controller)
+        _run_village(
+            state, controller,
+            on_village_event_applied=on_village_event_applied,
+        )
         state.clear_focused_object()          # village から本編へ移る境界
         state.turn += 1
         _goto(state, sc.start_node)
@@ -446,7 +457,10 @@ def run_session(state: GameState, controller) -> str:
             if _handle_decision(state, controller, node) == RELOAD:
                 continue
         elif node.kind == "combat":
-            res = _handle_combat(state, controller, node)
+            res = _handle_combat(
+                state, controller, node,
+                on_village_event_applied=on_village_event_applied,
+            )
             if res:
                 return res
         elif node.kind == "ending":

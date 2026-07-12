@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import copy
+import os
 
 import pytest
 
 from trpg_core.record import fixture_from_inputs
-from trpg_core.replay import FixtureController, replay_fixture
+from trpg_core.replay import (
+    FixtureController, assert_focus_trace_matches, expected_focus_trace,
+    load_fixture, replay_fixture,
+)
+from trpg_core.world import WorldObjectId
 from trpg_core.scenario_loader import load_scenario
 
 
@@ -72,3 +77,65 @@ def test_programmatic_replay_rejects_trailing_events(tail):
     bad["inputs"].append(tail)
     with pytest.raises(ValueError, match=r"remaining=1"):
         replay_fixture(bad)
+
+
+@pytest.mark.parametrize("value", ["bad", True, 1, 1.0, {}, [[]], [""], ["not-an-id"]])
+def test_expected_focus_trace_rejects_malformed_schema(value):
+    fixture = {"format_version": 1, "expected_focus_trace": value}
+    with pytest.raises(ValueError, match="expected_focus_trace|world object ID|value"):
+        expected_focus_trace(fixture, format_version=1)
+
+
+def test_expected_focus_trace_version_and_optional_contract():
+    assert expected_focus_trace({"format_version": 1}, format_version=1) is None
+    assert expected_focus_trace(
+        {"format_version": 1, "expected_focus_trace": []}, format_version=1,
+    ) == ()
+    parsed = expected_focus_trace(
+        {"format_version": 1, "expected_focus_trace": ["goblin:location/well", None]},
+        format_version=1,
+    )
+    assert parsed == (WorldObjectId("goblin", "location/well"), None)
+    with pytest.raises(ValueError, match="only for format_version 1"):
+        expected_focus_trace({"expected_focus_trace": []}, format_version=0)
+
+
+@pytest.mark.parametrize("expected,actual", [
+    ((WorldObjectId("goblin", "location/well"),), (None,)),
+    ((None,), ()),
+    ((), (None,)),
+    ((None, WorldObjectId("goblin", "location/well")),
+     (WorldObjectId("goblin", "location/well"), None)),
+])
+def test_focus_trace_comparison_is_exact_and_diagnostic(expected, actual):
+    with pytest.raises(ValueError, match=r"expected_focus_trace mismatch: .*expected_count=.*actual_count=.*index=.*expected=.*actual="):
+        assert_focus_trace_matches(expected, actual)
+
+
+def test_focus_v1_acceptance_fixture_replays_deterministically():
+    path = os.path.join(os.path.dirname(__file__), "fixtures", "focus_play_v1.json")
+    fixture = load_fixture(path)
+    assert fixture["format_version"] == 1
+    assert fixture["expected_focus_trace"] == ["envoy:location/teahouse", None]
+    for forbidden in ("focus next", "focus prev"):
+        assert all(forbidden not in token for token in fixture["inputs"])
+    first = replay_fixture(fixture, mode="full")
+    second = replay_fixture(fixture, mode="full")
+    assert first == second
+    assert first[0] and first[1] == fixture["expected_log"]
+
+
+def test_focus_v1_trace_mismatch_fails_after_log_match():
+    path = os.path.join(os.path.dirname(__file__), "fixtures", "focus_play_v1.json")
+    fixture = copy.deepcopy(load_fixture(path))
+    fixture["expected_focus_trace"] = [None, "envoy:location/teahouse"]
+    with pytest.raises(ValueError, match="expected_focus_trace mismatch"):
+        replay_fixture(fixture, mode="full")
+
+
+def test_focus_v1_field_omission_preserves_existing_replay_behavior():
+    path = os.path.join(os.path.dirname(__file__), "fixtures", "focus_play_v1.json")
+    fixture = copy.deepcopy(load_fixture(path))
+    del fixture["expected_focus_trace"]
+    ok, actual, diff = replay_fixture(fixture, mode="full")
+    assert ok and diff is None and actual == fixture["expected_log"]

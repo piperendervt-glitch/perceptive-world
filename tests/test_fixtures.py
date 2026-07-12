@@ -76,6 +76,10 @@ def test_all_fixtures_replay_state():
 
 def test_record_replay_roundtrip():
     for name, fx in _all_fixtures():
+        if fx.get("format_version") == 1:
+            ok, actual, diff = replay_fixture(fx, mode="full")
+            assert ok and actual == fx["expected_log"], f"{name}: v1 replay不一致 -> {diff}"
+            continue
         regenerated = fixture_from_inputs(
             fx["scenario"], fx["seed"], fx["inputs"],
             respawn=bool(fx.get("respawn", False)),
@@ -90,6 +94,18 @@ def test_protected_envoy_fixture_remains_legacy_v0():
     assert "format_version" not in fx
     assert len(fx["inputs"]) == 4
     assert len(fx["expected_log"]) == 10
+    ok, actual, diff = replay_fixture(fx, mode="full")
+    assert ok and actual == fx["expected_log"], diff
+
+
+def test_focus_v1_fixture_is_canonical_and_has_focus_expectation():
+    fx = load_fixture(os.path.join(FIXTURE_DIR, "focus_play_v1.json"))
+    assert fx["format_version"] == 1
+    assert fx["expected_focus_trace"] == ["envoy:location/teahouse", None]
+    verbs = tuple(token.split(":", 1)[0] for token in fx["inputs"])
+    assert {"move-to", "focus", "explore", "depart"} <= set(verbs)
+    assert all(not token.startswith(("north", "south", "east", "west"))
+               for token in fx["inputs"])
     ok, actual, diff = replay_fixture(fx, mode="full")
     assert ok and actual == fx["expected_log"], diff
 

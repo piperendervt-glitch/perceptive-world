@@ -41,7 +41,7 @@ from .record_codec import (
     record_format_version,
     serialize_record_token,
 )
-from .world import parse_world_object_id
+from .world import parse_world_object_id, serialize_world_object_id
 
 # --- イベント分類（型で判定。ログ本体は書き換えない）-----------------------
 # 描写イベント: Step 3 で GM(LLM) が生成する自由記述の型。今は未使用（描写は presenter 側）。
@@ -234,15 +234,70 @@ class FixtureController:
 
 # --- 再生と比較 --------------------------------------------------------------
 
-def _run(scenario_id: str, seed: int, inputs, respawn=False, *, format_version=0):
+def _run(
+    scenario_id: str, seed: int, inputs, respawn=False, *, format_version=0,
+    collect_focus_trace=False,
+):
     from .session import GameState, run_session
     from .scenario_loader import load_scenario
     state = GameState(seed, scenario=load_scenario(scenario_id))
     state.respawn_on_defeat = respawn
     controller = FixtureController(inputs, state.scenario, format_version=format_version)
-    run_session(state, controller)
+    focus_trace = [] if collect_focus_trace else None
+
+    def observe(action, authoritative_focus):
+        if isinstance(action, (SetFocusAction, ClearFocusAction)):
+            focus_trace.append(authoritative_focus)
+
+    run_session(
+        state, controller,
+        on_village_event_applied=observe if focus_trace is not None else None,
+    )
     controller.assert_all_events_consumed()
-    return state
+    return state, focus_trace
+
+
+def expected_focus_trace(fixture: dict, *, format_version: int):
+    if "expected_focus_trace" not in fixture:
+        return None
+    if format_version != 1:
+        raise ValueError("expected_focus_trace is supported only for format_version 1")
+    raw = fixture["expected_focus_trace"]
+    if not isinstance(raw, list):
+        raise ValueError("expected_focus_trace must be an array")
+    parsed = []
+    for index, value in enumerate(raw):
+        if value is None:
+            parsed.append(None)
+        elif type(value) is str:
+            parsed.append(parse_world_object_id(value))
+        else:
+            raise ValueError(
+                f"expected_focus_trace[{index}] must be a WorldObjectId string or null"
+            )
+    return tuple(parsed)
+
+
+def _focus_value(value):
+    return "null" if value is None else serialize_world_object_id(value)
+
+
+def assert_focus_trace_matches(expected, actual):
+    actual = tuple(actual)
+    if tuple(expected) == actual:
+        return
+    limit = min(len(expected), len(actual))
+    index = next((i for i in range(limit) if expected[i] != actual[i]), limit)
+    missing = object()
+    expected_value = expected[index] if index < len(expected) else missing
+    actual_value = actual[index] if index < len(actual) else missing
+    display_expected = "<missing>" if expected_value is missing else _focus_value(expected_value)
+    display_actual = "<missing>" if actual_value is missing else _focus_value(actual_value)
+    raise ValueError(
+        "expected_focus_trace mismatch: "
+        f"expected_count={len(expected)}, actual_count={len(actual)}, index={index}, "
+        f"expected={display_expected}, actual={display_actual}"
+    )
 
 
 def compare_logs(expected: list, actual: list):
@@ -266,15 +321,20 @@ def replay_fixture(fixture: dict, mode: str = "full"):
     戻り値: (ok: bool, actual_log: list, diff: tuple|None)
     """
     version = record_format_version(fixture)
-    state = _run(fixture["scenario"], fixture["seed"], fixture["inputs"],
-                 respawn=bool(fixture.get("respawn", False)),
-                 format_version=version)
+    expected_trace = expected_focus_trace(fixture, format_version=version)
+    state, actual_trace = _run(
+        fixture["scenario"], fixture["seed"], fixture["inputs"],
+        respawn=bool(fixture.get("respawn", False)), format_version=version,
+        collect_focus_trace=expected_trace is not None,
+    )
     actual = state.log
     expected = fixture["expected_log"]
     if mode == "state":
         expected = game_state_events(expected)
         actual = game_state_events(actual)
     diff = compare_logs(expected, actual)
+    if diff is None and expected_trace is not None:
+        assert_focus_trace_matches(expected_trace, actual_trace)
     return (diff is None, state.log, diff)
 
 
