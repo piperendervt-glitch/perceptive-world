@@ -89,6 +89,26 @@ def test_shared_dispatcher_applies_lod_actions_to_engine_owned_runtime():
     assert state.lod_runtime.objects[0].lod_state.unlocked_lod_cap == 3
 
 
+def test_focus_lod_actions_are_non_turn_non_rng_and_runtime_survives_revisit():
+    state, game_map = _setup()
+    well = location_world_object_id("goblin", "well")
+    lookout = location_world_object_id("goblin", "lookout")
+    _apply_village_action(state, game_map, (), MoveToLocationAction(well))
+    before_turn, before_rng = state.turn, state.rng.state()
+    for action in (
+        SetFocusAction(well), ObserveFocusedObjectAction(),
+        InspectFocusedObjectAction(), ClearFocusAction(),
+    ):
+        assert not _apply_village_action(state, game_map, (), action)
+    acquired = state.lod_runtime
+    assert state.turn == before_turn and state.rng.state() == before_rng
+    assert state.focus_state.focused_object_id is None
+    assert acquired.objects[0].attention.attention_level == 3
+    _apply_village_action(state, game_map, (), MoveToLocationAction(lookout))
+    _apply_village_action(state, game_map, (), MoveToLocationAction(well))
+    assert state.lod_runtime == acquired
+
+
 @pytest.mark.parametrize("action", [
     MoveToLocationAction(location_world_object_id("other", "well")),
     MoveToLocationAction(location_world_object_id("goblin", "forest_gate")),

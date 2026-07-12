@@ -27,6 +27,7 @@ from trpg_core.presentation import (
 )
 from trpg_core.lod import ObjectAttentionState, ObjectLodState
 from trpg_core.lod_actions import LodRuntimeState, ObjectLodProgress
+from trpg_core.lod_content import lod_content_for_world_object
 from trpg_core.world import WorldFact, WorldObjectId
 from trpg_core.presentation import (
     focused_object_lod_view, visual_asset_key_for_object,
@@ -334,6 +335,25 @@ def test_focused_lod_projection_is_opt_in_and_empty_runtime_is_read_only():
     assert view.current_lod == 0
     assert tuple(f.key for f in view.visible_facts) == ("shape",)
     assert runtime == LodRuntimeState()
+
+
+@pytest.mark.parametrize("scene", ["well", "shrine", "lookout", "herbhut", "elderhouse"])
+@pytest.mark.parametrize("attention,cap", [
+    (0, 3), (1, 3), (3, 3), (6, 3), (6, 1), (6, 2),
+])
+def test_all_lod_objects_project_only_cumulative_authoritative_facts(scene, attention, cap):
+    object_id = WorldObjectId("goblin", f"location/{scene}")
+    content = lod_content_for_world_object(object_id)
+    runtime = LodRuntimeState((ObjectLodProgress(
+        object_id, ObjectAttentionState(attention), ObjectLodState(cap),
+    ),))
+    view = focused_object_lod_view(focused_object_id=object_id, lod_runtime=runtime)
+    expected_keys = content.visible_fact_keys_by_lod[view.current_lod]
+    assert tuple(fact.key for fact in view.visible_facts) == expected_keys
+    assert set(expected_keys).issubset(fact.key for fact in content.facts)
+    assert not ({fact.key for fact in content.facts} - set(expected_keys)).intersection(
+        fact.key for fact in view.visible_facts
+    )
 
 
 @pytest.mark.parametrize("attention,cap,expected", [
