@@ -39,7 +39,7 @@ def test_side_panel_sections_remain_ordered_with_four_exits_and_long_feedback():
 
 def test_controls_copy_is_phase_specific():
     assert "WASD" in controls_text_for_phase("village")
-    assert "WASD" not in controls_text_for_phase("story")
+    assert "WASD" in controls_text_for_phase("story")
     assert "Focus" not in controls_text_for_phase("combat")
     assert "Q" in controls_text_for_phase("ending")
 

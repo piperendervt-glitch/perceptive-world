@@ -11,6 +11,7 @@ from .spatial_input import (
     canonical_action_for_spatial_step, movement_action_from_step,
     movement_step_for_keyboard_code,
 )
+from .story_spatial import canonical_action_for_story_spatial_step
 
 HOVER_FOCUS_DELAY_MS = 400
 FIRST_OBSERVE_DELAY_MS = 700
@@ -95,13 +96,22 @@ class TwoDCombatAction:
 def controls_text_for_phase(phase: str) -> str:
     controls = {
         "village": "WASD / Arrows: Move | Click: Focus | O: Observe | I: Inspect | Q: Quit\n対象にカーソルを合わせ続けると、自動で詳しく観察します。",
-        "story": "選択肢をクリック | Q: Quit",
+        "story": "WASD / Arrows: Move | Q: Quit",
         "combat": "戦闘actionをクリック | Q: Quit",
         "ending": "完了 | Q: Quit",
     }
     if phase not in controls:
         raise ValueError("unknown 2D session phase")
     return controls[phase]
+
+
+def spatial_routes_text(scene: SceneSpatialView) -> str:
+    if type(scene) is not SceneSpatialView or not scene.exits:
+        raise ValueError("spatial route legend requires scene exits")
+    entries = "\n".join(f"{item.marker} {item.label}" for item in scene.exits)
+    if all(item.transition_kind == "story" for item in scene.exits):
+        return f"進路\n{entries}\n\n番号のマスまでWASD／矢印キーで移動"
+    return f"出口\n{entries}\n\n出口までWASD／矢印キーで移動"
 
 
 def build_two_d_layout(*, window_width: int, window_height: int,
@@ -180,6 +190,16 @@ class TwoDClientAdapter:
             step=step, definition=definition,
         )
 
+    def canonical_story_movement_action(self, position, keysym: str, char: str = "", *, node_id, definition):
+        code = normalized_keyboard_code(keysym, char)
+        step = movement_step_for_keyboard_code(code) if code is not None else None
+        if position is None or step is None or definition is None:
+            return None
+        return canonical_action_for_story_spatial_step(
+            current_node_id=node_id, current_position=position,
+            step=step, definition=definition,
+        )
+
     def click_action(self, scene, layout, x, y):
         object_id = spatial_object_at_pixel(scene, layout, x=x, y=y)
         return None if object_id is None else SetFocusAction(object_id)
@@ -219,10 +239,9 @@ class TwoDSessionModel:
             actions = []
             enemies = ()
             if self.phase == "story":
-                actions = [
-                    (choice.label, TwoDChoiceAction(choice.key))
-                    for choice in node.choices
-                ]
+                definition = self.state.story_spatial_definition_for_node(node.id)
+                if definition is None:
+                    actions = [(choice.label, TwoDChoiceAction(choice.key)) for choice in node.choices]
             elif self.phase == "combat":
                 commands = ("attack", "magic", "herb", "flee")
                 labels = {"attack": "攻撃", "magic": "魔法", "herb": "薬草", "flee": "逃走"}
@@ -249,6 +268,10 @@ class TwoDSessionModel:
             return build_render_snapshot(
                 self.state, presentation_context, active_game_map=None,
                 lod_runtime=self.state.lod_runtime,
+                story_spatial_definition=(
+                    self.state.story_spatial_definition_for_node(node.id)
+                    if self.phase == "story" else None
+                ),
             )
 
         context = _village_context(self.state, self.game_map, self.picked)
@@ -292,7 +315,12 @@ class TwoDSessionModel:
                 if departed:
                     self._enter_story_phase()
             elif self.phase == "story":
-                self._apply_story_choice(action)
+                from .input_actions import MovePlayerToPositionAction
+                if type(action) is MovePlayerToPositionAction:
+                    from .spatial_actions import apply_player_movement
+                    apply_player_movement(self.state, action)
+                else:
+                    self._apply_story_choice(action)
             elif self.phase == "combat":
                 self._apply_combat_action(action)
             else:
@@ -327,7 +355,8 @@ class TwoDSessionModel:
             self.combat_encounter = None
 
     def _apply_story_choice(self, action):
-        if type(action) is not TwoDChoiceAction:
+        from .input_actions import StoryChoiceAction
+        if type(action) not in (TwoDChoiceAction, StoryChoiceAction):
             raise ValueError("story phase requires a choice action")
         from .session import _handle_decision
         class Controller:
@@ -374,6 +403,14 @@ class TwoDSessionModel:
             self.closed = True
             return "quit"
         if self.phase != "village":
+            if self.phase == "story":
+                definition = self.state.story_spatial_definition_for_node(self.state.node)
+                action = self.adapter.canonical_story_movement_action(
+                    self.state.player_position, keysym, char,
+                    node_id=self.state.node, definition=definition,
+                )
+                if action is not None:
+                    return action
             if normalized_keyboard_code(keysym, char) is not None:
                 self.feedback = "Spatial movement is unavailable in this phase"
             return None
@@ -575,7 +612,8 @@ def run_two_d_session(seed: int, scenario_id: str) -> None:
                 )
                 canvas.create_text(
                     rect.left+rect.width//2, rect.top+rect.height//2,
-                    text="E", fill="white",
+                    text=exit_.marker, fill="white",
+                    font=("TkDefaultFont", 13, "bold"),
                 )
             if scene.player_position is not None:
                 rect = pixel_rect_for_cell(current_layout, scene.player_position)
@@ -633,10 +671,9 @@ def run_two_d_session(seed: int, scenario_id: str) -> None:
             text=f"Objective\n{snap.objective}\nFeedback\n{clipped_feedback}",
         )
         if scene is not None and scene.exits:
-            exit_text = "\n".join(f"・ {item.label}" for item in scene.exits)
             canvas.create_text(
                 panel_x, panel_layout.exits_top, anchor="nw", fill="white",
-                text=f"出口\n{exit_text}\n\n出口までWASD／矢印キーで移動",
+                text=spatial_routes_text(scene),
             )
         signature = (
             tuple(label for label, _action in model.available_actions),

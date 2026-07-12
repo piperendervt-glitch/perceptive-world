@@ -35,6 +35,7 @@ from .input_actions import (
     ApplyLodUnlockAction, ClearFocusAction, DepartAction, ExploreAction,
     InspectFocusedObjectAction, MoveToLocationAction, ObserveFocusedObjectAction,
     MovePlayerToPositionAction, SetFocusAction,
+    StoryChoiceAction,
 )
 from .spatial import PlayerPosition
 from .lod import derive_current_lod
@@ -203,6 +204,23 @@ class FixtureController:
         self.canonical_inputs.append(serialize_record_token("choice", key))
         return key
 
+    def story_action(self, state, node):
+        if self.format_version < 5:
+            return StoryChoiceAction(self.choice(node.id, [c.key for c in node.choices]))
+        if not self.q:
+            raise ValueError("入力列が尽きた（story action を要求）")
+        item = self.q.popleft()
+        parsed = parse_record_token(item, format_version=self.format_version)
+        if parsed.verb == "move-player-to":
+            x, y = parsed.payload.split(",")
+            action = MovePlayerToPositionAction(PlayerPosition(int(x), int(y)))
+        elif parsed.verb == "choice":
+            action = StoryChoiceAction(self._resolve_choice(node.id, parsed.payload))
+        else:
+            raise ValueError(f"story中に不正な入力: {item!r}")
+        self.canonical_inputs.append(item)
+        return action
+
     def combat_command(self, state, enemies):
         command = self._pop("combat")
         self.canonical_inputs.append(serialize_record_token("combat", command))
@@ -263,6 +281,8 @@ def _run(
     )
     state_args = ({"spatial_definition_provider": provider}
                   if provider is not None else {})
+    if format_version <= 4:
+        state_args["story_spatial_definition_provider"] = lambda _scenario, _node: None
     state = GameState(seed, scenario=load_scenario(scenario_id), **state_args)
     state.respawn_on_defeat = respawn
     controller = FixtureController(inputs, state.scenario, format_version=format_version)
@@ -292,8 +312,8 @@ def _run(
 def expected_focus_trace(fixture: dict, *, format_version: int):
     if "expected_focus_trace" not in fixture:
         return None
-    if format_version not in {1, 2, 3, 4}:
-        raise ValueError("expected_focus_trace is supported only for format_version 1 through 4")
+    if format_version not in {1, 2, 3, 4, 5}:
+        raise ValueError("expected_focus_trace is supported only for format_version 1 through 5")
     raw = fixture["expected_focus_trace"]
     if not isinstance(raw, list):
         raise ValueError("expected_focus_trace must be an array")
@@ -360,8 +380,8 @@ def serialize_lod_trace(trace) -> list[list[dict]]:
 def expected_lod_trace(fixture: dict, *, format_version: int):
     if "expected_lod_trace" not in fixture:
         return None
-    if format_version not in {2, 3, 4}:
-        raise ValueError("expected_lod_trace is supported only for format_version 2 through 4")
+    if format_version not in {2, 3, 4, 5}:
+        raise ValueError("expected_lod_trace is supported only for format_version 2 through 5")
     raw = fixture["expected_lod_trace"]
     if not isinstance(raw, list):
         raise ValueError("expected_lod_trace must be an array")
@@ -415,8 +435,8 @@ def serialize_position_trace(trace):
 def expected_position_trace(fixture: dict, *, format_version: int):
     if "expected_position_trace" not in fixture:
         return None
-    if format_version not in {3, 4}:
-        raise ValueError("expected_position_trace is supported only for format_version 3 or 4")
+    if format_version not in {3, 4, 5}:
+        raise ValueError("expected_position_trace is supported only for format_version 3 through 5")
     raw = fixture["expected_position_trace"]
     if type(raw) is not list:
         raise ValueError("expected_position_trace must be an array")

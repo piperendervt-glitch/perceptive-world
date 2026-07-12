@@ -70,6 +70,9 @@ from .spatial_actions import apply_player_movement
 from .spatial_input import (
     canonical_action_for_spatial_step, movement_step_for_line_command,
 )
+from .story_spatial import (
+    current_story_spatial_definition, story_entry_spawn_from_node,
+)
 
 # Windows console default cp932 chokes on CJK output; force UTF-8（resolve.py と同流儀）。
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -80,8 +83,8 @@ LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
 RELOAD = "__reload__"
 DEFAULT_SCENARIO = "goblin"
 LEGACY_SAVE_FORMAT_VERSION = 0
-CURRENT_SAVE_FORMAT_VERSION = 4
-SUPPORTED_SAVE_FORMAT_VERSIONS = frozenset({0, 1, 2, 3, 4})
+CURRENT_SAVE_FORMAT_VERSION = 5
+SUPPORTED_SAVE_FORMAT_VERSIONS = frozenset({0, 1, 2, 3, 4, 5})
 
 # 村の地図移動の方角エイリアス（英語/略/日本語）。地図移動は乱数を消費しない（UI のみ）。
 _DIR_ALIAS = {
@@ -122,6 +125,7 @@ class GameState:
     def __init__(
         self, seed: int, scenario=None, *, player_position=None,
         spatial_definition_provider=current_spatial_definition_for_scene,
+        story_spatial_definition_provider=current_story_spatial_definition,
     ):
         # シナリオ（データ）を読む。char/敵/ノードはすべてここから来る。
         if scenario is None:
@@ -147,12 +151,14 @@ class GameState:
         # 村の現在地（地図の真実源＝GameMap の current をここに永続化。save/load 対象）。
         self.location = scenario.map_start if getattr(scenario, "has_map", False) else None
         self._spatial_definition_provider = spatial_definition_provider
+        self._story_spatial_definition_provider = story_spatial_definition_provider
         definition = self.spatial_definition_for_location(self.location)
         self.player_position = (
             player_position if player_position is not None
             else (definition.player_spawn if definition is not None else None)
         )
         self.started = False
+        self.story_spatial_active = False
         self.respawn_on_defeat = False
         self.log: list[dict] = []
         self.focus_state = FocusState()
@@ -184,11 +190,31 @@ class GameState:
     def clear_focused_object(self) -> None:
         self.focus_state = resolve_clear_focus(self.focus_state)
 
-    def transition_node(self, node: str) -> None:
-        if node == self.node:
+    def transition_node(self, node: str, *, force: bool = False) -> None:
+        if node == self.node and not force:
             return
+        source = self.node
         self.node = node
         self.clear_focused_object()
+        definition = self.story_spatial_definition_for_node(node)
+        if definition is None:
+            self.story_spatial_active = False
+            self.player_position = None
+            return
+        self.story_spatial_active = True
+        source_node = self.scenario.node(source)
+        if source != node and source_node.kind == "decision":
+            position = story_entry_spawn_from_node(definition, source)
+            if position is None:
+                raise ValueError("destination has no story entry spawn for source node")
+            self.player_position = position
+        else:
+            self.player_position = definition.player_spawn
+
+    def story_spatial_definition_for_node(self, node: str | None):
+        if node is None:
+            return None
+        return self._story_spatial_definition_provider(self.scenario.id, node)
 
     def spatial_definition_for_location(self, location: str | None):
         if location is None:
@@ -200,6 +226,7 @@ class GameState:
     ) -> None:
         if location == self.location:
             return
+        self.story_spatial_active = False
         definition = self.spatial_definition_for_location(location)
         source = self.location if source_location is None else source_location
         position = definition.player_spawn if definition is not None else None
@@ -281,6 +308,7 @@ def make_save_document(state: GameState) -> dict:
     document["player_position"] = (
         {"x": position.x, "y": position.y} if position is not None else None
     )
+    document["story_spatial_active"] = bool(state.story_spatial_active)
     return document
 
 
@@ -314,8 +342,11 @@ def _decode_lod_runtime(document, version):
     return LodRuntimeState(tuple(entries))
 
 
-def _decode_player_position(document, version, location, scenario_id):
+def _decode_player_position(document, version, location, scenario_id, node, story_active):
     definition = current_spatial_definition_for_scene(scenario_id, location)
+    story_definition = current_story_spatial_definition(scenario_id, node)
+    if story_definition is not None and version >= 5 and story_active:
+        definition = story_definition
     if version < 3:
         if "player_position" in document:
             raise ValueError("legacy save cannot contain player_position")
@@ -336,7 +367,11 @@ def _decode_player_position(document, version, location, scenario_id):
         raise ValueError("player_position requires a spatial definition")
     if not can_player_occupy(definition.spec, position):
         raise ValueError("player_position is not occupiable")
-    if spatial_exit_at_cell(definition, SceneCell(position.x, position.y)) is not None:
+    if story_definition is not None and version >= 5 and story_active:
+        from .story_spatial import story_trigger_at_cell
+        if story_trigger_at_cell(story_definition, SceneCell(position.x, position.y)) is not None:
+            raise ValueError("player_position must not occupy a story trigger cell")
+    elif spatial_exit_at_cell(definition, SceneCell(position.x, position.y)) is not None:
         raise ValueError("player_position must not occupy an exit cell")
     return position
 
@@ -371,13 +406,22 @@ def _validated_save_state(document, scenario):
         raise ValueError("rng_a must be a 32-bit unsigned integer")
     if document["node"] not in scenario.nodes:
         raise ValueError("saved node does not exist")
+    if version < 5:
+        if "story_spatial_active" in document:
+            raise ValueError("legacy save cannot contain story_spatial_active")
+        story_active = False
+    else:
+        story_active = document.get("story_spatial_active")
+        if type(story_active) is not bool:
+            raise ValueError("story_spatial_active must be a bool")
     if scenario.has_map:
         if document["location"] not in scenario.map_locations:
             raise ValueError("saved location does not exist")
     elif document["location"] is not None:
         raise ValueError("mapless scenario cannot restore a location")
     player_position = _decode_player_position(
-        document, version, document["location"], scenario.id,
+        document, version, document["location"], scenario.id, document["node"],
+        story_active,
     )
 
     if version == 0:
@@ -395,6 +439,7 @@ def _validated_save_state(document, scenario):
 
     candidate = GameState(document["seed"], scenario=scenario)
     candidate.restore(dict(document))
+    candidate.story_spatial_active = story_active
     candidate.player_position = player_position
     candidate.lod_runtime = lod_runtime
     if focused is not None:
@@ -484,7 +529,7 @@ class PolicyController:
 
 def _goto(state: GameState, node_id: str) -> None:
     """遷移先へ移り、enter_node を刻む（ノード進入はすべてここを通す）。"""
-    state.transition_node(node_id)
+    state.transition_node(node_id, force=True)
     state.emit(type="enter_node", node=node_id)
 
 
@@ -655,9 +700,23 @@ def _resolve_check(state: GameState, check: dict) -> bool:
     return rr["success"]
 
 
-def _handle_decision(state: GameState, controller, node) -> str | None:
+def _handle_decision(state: GameState, controller, node, *, on_action_applied=None) -> str | None:
     """決定ノードを 1 手進める。RELOAD ならそれを返し、それ以外は None。"""
-    key = controller.choice(node.id, [c.key for c in node.choices])
+    if hasattr(controller, "story_action") and state.story_spatial_active:
+        while True:
+            action = controller.story_action(state, node)
+            if isinstance(action, MovePlayerToPositionAction):
+                apply_player_movement(state, action)
+                if on_action_applied is not None:
+                    on_action_applied(action, state.focus_state.focused_object_id)
+                continue
+            from .input_actions import StoryChoiceAction
+            if not isinstance(action, StoryChoiceAction):
+                raise ValueError("story controller returned an unsupported action")
+            key = action.key
+            break
+    else:
+        key = controller.choice(node.id, [c.key for c in node.choices])
     if key == RELOAD:
         return RELOAD
     state.turn += 1
@@ -669,6 +728,8 @@ def _handle_decision(state: GameState, controller, node) -> str | None:
     else:
         dest = choice.next
     _goto(state, dest)
+    if on_action_applied is not None and 'action' in locals():
+        on_action_applied(action, state.focus_state.focused_object_id)
     return None
 
 
@@ -728,7 +789,10 @@ def run_session(state: GameState, controller, *, on_village_event_applied=None) 
     while True:
         node = sc.node(state.node)
         if node.kind == "decision":
-            if _handle_decision(state, controller, node) == RELOAD:
+            if _handle_decision(
+                state, controller, node,
+                on_action_applied=on_village_event_applied,
+            ) == RELOAD:
                 continue
         elif node.kind == "combat":
             res = _handle_combat(

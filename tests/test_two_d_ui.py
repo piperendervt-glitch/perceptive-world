@@ -119,10 +119,11 @@ def test_forest_gate_depart_switches_to_story_then_combat_actions():
     depart = model.handle_key("w", "w")
     assert type(depart).__name__ == "DepartAction"
     assert model.phase == "story"
-    assert state.player_position is None
-    assert model.snapshot.spatial_scene is None
-    assert model.available_actions and all(label for label, _ in model.available_actions)
-    assert model.activate_available_action(0)
+    assert state.player_position == PlayerPosition(3, 2)
+    assert model.snapshot.spatial_scene is not None
+    assert model.available_actions == ()
+    state.player_position = PlayerPosition(4, 2)
+    assert model.handle_key("d", "d")
     assert model.phase == "combat"
     assert [label for label, _ in model.available_actions] == [
         "攻撃", "魔法", "薬草", "逃走",
@@ -139,6 +140,52 @@ def test_forest_gate_depart_switches_to_story_then_combat_actions():
     assert model.phase in {"story", "combat", "ending"}
     assert model.phase == "ending" or model.available_actions
     assert model.handle_key("q", "q") == "quit"
+
+
+def test_story_trigger_markers_match_panel_legend_and_remain_canonical_free():
+    from trpg_core.scenario_loader import load_scenario
+    from trpg_core.session import GameState
+    from trpg_core.two_d import spatial_routes_text
+    state = GameState(7, scenario=load_scenario("goblin"))
+    model = TwoDSessionModel(state)
+    model.phase = "story"
+    state.transition_node("forest", force=True)
+    model.snapshot = model._build_snapshot()
+    exits = model.snapshot.spatial_scene.exits
+    assert [(item.marker, item.label) for item in exits] == [
+        ("①", "街道を行く"),
+        ("②", "藪を抜ける【vit 判定 / 目標 8】"),
+    ]
+    assert len({item.marker for item in exits}) == 2
+    legend = spatial_routes_text(model.snapshot.spatial_scene)
+    assert "① 街道を行く" in legend and "② 藪を抜ける" in legend
+    assert not any(key in repr(exits) for key in ("road", "bush", "forest"))
+    before = tuple((item.position, item.marker, item.label) for item in exits)
+    for size in ((760, 620), (1200, 800)):
+        build_two_d_layout(window_width=size[0], window_height=size[1],
+                           scene_width=7, scene_height=5)
+        assert tuple((item.position, item.marker, item.label)
+                     for item in model.snapshot.spatial_scene.exits) == before
+
+    state.transition_node("cave_entrance", force=True)
+    state.transition_node("cave_hall", force=True)
+    model.snapshot = model._build_snapshot()
+    assert [(item.marker, item.label) for item in model.snapshot.spatial_scene.exits] == [
+        ("①", "正面から進む"),
+        ("②", "松明を消して忍ぶ【vit 判定 / 目標 8】"),
+    ]
+
+
+def test_single_choice_story_node_has_nonempty_marker_and_label():
+    from trpg_core.scenario_loader import load_scenario
+    from trpg_core.session import GameState
+    state = GameState(7, scenario=load_scenario("goblin"))
+    model = TwoDSessionModel(state)
+    model.phase = "story"
+    state.transition_node("sneak_ok", force=True)
+    model.snapshot = model._build_snapshot()
+    route, = model.snapshot.spatial_scene.exits
+    assert (route.marker, route.label) == ("①", "洞窟へ")
 
 
 def test_ending_snapshot_has_terminal_objective_not_stale_combat_copy():

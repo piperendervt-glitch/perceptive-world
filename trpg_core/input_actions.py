@@ -91,6 +91,15 @@ class MovePlayerToPositionAction:
             raise ValueError("destination must be a PlayerPosition")
 
 
+@dataclass(frozen=True)
+class StoryChoiceAction:
+    key: str
+
+    def __post_init__(self) -> None:
+        if type(self.key) is not str or not self.key or self.key != self.key.strip():
+            raise ValueError("story choice key must be non-empty exact text")
+
+
 SpatialCanonicalAction: TypeAlias = MovePlayerToPositionAction
 
 

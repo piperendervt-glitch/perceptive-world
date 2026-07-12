@@ -76,7 +76,7 @@ def test_all_fixtures_replay_state():
 
 def test_record_replay_roundtrip():
     for name, fx in _all_fixtures():
-        if fx.get("format_version") in {1, 2, 3, 4}:
+        if fx.get("format_version") in {1, 2, 3, 4, 5}:
             ok, actual, diff = replay_fixture(fx, mode="full")
             assert ok and actual == fx["expected_log"], f"{name}: v1 replay不一致 -> {diff}"
             continue
@@ -150,6 +150,15 @@ def test_scene_spatial_v4_fixture_uses_catalog_entry_position_and_replays_twice(
     assert fx["expected_position_trace"][:2] == [
         {"x": 3, "y": 1}, {"x": 3, "y": 3},
     ]
+    first = replay_fixture(fx, mode="full")
+    second = replay_fixture(fx, mode="full")
+    assert first == second
+    assert first[0] and first[1] == fx["expected_log"]
+
+
+def test_story_spatial_v5_fixture_replays_twice():
+    fx = load_fixture(os.path.join(FIXTURE_DIR, "story_spatial_play_v5.json"))
+    assert fx["format_version"] == 5
     first = replay_fixture(fx, mode="full")
     second = replay_fixture(fx, mode="full")
     assert first == second

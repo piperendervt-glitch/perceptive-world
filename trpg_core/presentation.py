@@ -216,14 +216,26 @@ class SpatialExitView:
     position: SpatialCellView
     label: str
     transition_kind: str
+    marker: str = "E"
 
     def __post_init__(self):
         if type(self.position) is not SpatialCellView:
             raise ValueError("position must be a SpatialCellView")
         if type(self.label) is not str or not self.label:
             raise ValueError("label must be non-empty text")
-        if self.transition_kind not in {"move", "depart"}:
-            raise ValueError("transition_kind must be move or depart")
+        if self.transition_kind not in {"move", "depart", "story"}:
+            raise ValueError("transition_kind must be move, depart, or story")
+        if type(self.marker) is not str or not self.marker:
+            raise ValueError("marker must be non-empty text")
+
+
+_STORY_TRIGGER_MARKERS = tuple("①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳")
+
+
+def story_trigger_marker(index: int) -> str:
+    if type(index) is not int or index < 0:
+        raise ValueError("story trigger index must be a non-negative int")
+    return _STORY_TRIGGER_MARKERS[index] if index < len(_STORY_TRIGGER_MARKERS) else str(index + 1)
 
 
 @dataclass(frozen=True)
@@ -343,6 +355,7 @@ def build_render_snapshot(
     *,
     active_game_map: Any | None = None,
     lod_runtime: LodRuntimeState | None = None,
+    story_spatial_definition: Any | None = None,
 ) -> RenderSnapshot:
     """GameState相当の値を読み、ゲーム状態を変更せず表示用コピーを返す。
 
@@ -447,6 +460,33 @@ def build_render_snapshot(
                 objects,
                 tuple(exits),
             )
+    elif story_spatial_definition is not None:
+        from .spatial import SceneCell, is_blocked_cell
+        definition = story_spatial_definition
+        spec = definition.spec
+        blocked = tuple(
+            SpatialCellView(x, y)
+            for y in range(spec.bounds.height)
+            for x in range(spec.bounds.width)
+            if is_blocked_cell(spec, SceneCell(x, y))
+        )
+        trigger_labels = {
+            choice.key: choice.label
+            for choice in state.scenario.node(definition.node_id).choices
+        }
+        exits = tuple(SpatialExitView(
+            SpatialCellView(trigger.cell.x, trigger.cell.y),
+            trigger_labels[trigger.transition.choice_key], "story",
+            story_trigger_marker(index),
+        ) for index, trigger in enumerate(definition.triggers))
+        position = getattr(state, "player_position", None)
+        spatial_scene = SceneSpatialView(
+            spec.bounds.width, spec.bounds.height,
+            tuple(SpatialCellView(cell.x, cell.y) for cell in spec.walkable_cells),
+            blocked,
+            None if position is None else SpatialCellView(position.x, position.y),
+            (), exits,
+        )
     elif focused_id is not None:
         raise ValueError("focused object requires an active map scene")
     return RenderSnapshot(

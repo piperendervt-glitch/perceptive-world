@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from .world import parse_world_object_id
 
 
-CURRENT_RECORD_FORMAT_VERSION = 4
+CURRENT_RECORD_FORMAT_VERSION = 5
 LEGACY_RECORD_FORMAT_VERSION = 0
-SUPPORTED_RECORD_FORMAT_VERSIONS = frozenset({0, 1, 2, 3, 4})
+SUPPORTED_RECORD_FORMAT_VERSIONS = frozenset({0, 1, 2, 3, 4, 5})
 
 _LEGACY_PAYLOAD_VERBS = frozenset({"explore", "choice", "combat"})
 _V1_PAYLOAD_VERBS = _LEGACY_PAYLOAD_VERBS | frozenset({"move-to", "focus:set"})
