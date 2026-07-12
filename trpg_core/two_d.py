@@ -563,6 +563,8 @@ def run_two_d_session(seed: int, scenario_id: str) -> None:
     from .scenario_loader import load_scenario
     from .session import GameState
     model = TwoDSessionModel(GameState(seed, scenario=load_scenario(scenario_id)))
+    from .two_d_assets import TkImageCache
+    image_cache = TkImageCache(tk.PhotoImage)
     root.title(f"Perceptive World — {scenario_id} — seed {seed}")
     root.minsize(760, 620)
     canvas = tk.Canvas(root, width=960, height=640, background="#20242a", highlightthickness=0)
@@ -595,12 +597,16 @@ def run_two_d_session(seed: int, scenario_id: str) -> None:
             for obj in scene.objects:
                 rect = pixel_rect_for_cell(current_layout, obj.position)
                 focused = model.snapshot.focused_object_id == f"{obj.object_id.scenario_id}:{obj.object_id.local_id}"
-                canvas.create_oval(rect.left+8, rect.top+8, rect.left+rect.width-8, rect.top+rect.height-8,
-                                   fill="#b28b45", outline="#ffffff" if focused else "#403018", width=4 if focused else 2)
-                canvas.create_text(
-                    rect.left+rect.width//2, rect.top+rect.height//2,
-                    text=obj.glyph, fill="white", font=("TkDefaultFont", 14, "bold"),
-                )
+                image = image_cache.image_for(obj.visual_asset_key, rect.width) if obj.visual_asset_key else None
+                if image is not None:
+                    canvas.create_image(rect.left+rect.width//2, rect.top+rect.height//2, image=image)
+                    canvas.create_rectangle(rect.left+5, rect.top+5, rect.left+rect.width-5, rect.top+rect.height-5,
+                                            outline="#ffffff" if focused else "#403018", width=4 if focused else 2)
+                else:
+                    canvas.create_oval(rect.left+8, rect.top+8, rect.left+rect.width-8, rect.top+rect.height-8,
+                                       fill="#b28b45", outline="#ffffff" if focused else "#403018", width=4 if focused else 2)
+                    canvas.create_text(rect.left+rect.width//2, rect.top+rect.height//2,
+                                       text=obj.glyph, fill="white", font=("TkDefaultFont", 14, "bold"))
                 if dwell is not None and dwell.hovered_object_id == obj.object_id:
                     canvas.create_rectangle(rect.left+3, rect.top+3, rect.left+rect.width-3, rect.top+rect.height-3,
                                             outline="#8fd3ff", width=2)

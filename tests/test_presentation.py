@@ -28,7 +28,10 @@ from trpg_core.presentation import (
 from trpg_core.lod import ObjectAttentionState, ObjectLodState
 from trpg_core.lod_actions import LodRuntimeState, ObjectLodProgress
 from trpg_core.world import WorldFact, WorldObjectId
-from trpg_core.presentation import focused_object_lod_view, visible_world_fact_view
+from trpg_core.presentation import (
+    focused_object_lod_view, visual_asset_key_for_object,
+    visible_world_fact_view,
+)
 from trpg_core.scenario_loader import load_scenario
 from trpg_core.session import GameState
 from trpg_core.world import location_world_object_id
@@ -308,6 +311,27 @@ def test_focused_lod_projection_is_opt_in_and_empty_runtime_is_read_only():
     assert view.current_lod == 0
     assert tuple(f.key for f in view.visible_facts) == ("shape",)
     assert runtime == LodRuntimeState()
+
+
+@pytest.mark.parametrize("attention,cap,expected", [
+    (0, 3, "goblin/well/lod0"),
+    (1, 3, "goblin/well/lod1"),
+    (3, 3, "goblin/well/lod2"),
+    (6, 3, "goblin/well/lod3"),
+    (6, 1, "goblin/well/lod1"),
+])
+def test_well_visual_asset_key_uses_authoritative_lod_without_mutation(attention, cap, expected):
+    well = WorldObjectId("goblin", "location/well")
+    runtime = LodRuntimeState((ObjectLodProgress(
+        well, ObjectAttentionState(attention), ObjectLodState(cap),
+    ),))
+    before = copy.deepcopy(runtime)
+    assert visual_asset_key_for_object(well, runtime) == expected
+    assert runtime == before
+    assert visual_asset_key_for_object(well, LodRuntimeState()) == "goblin/well/lod0"
+    assert visual_asset_key_for_object(WorldObjectId("goblin", "location/plaza"), runtime) is None
+
+
 def test_well_snapshot_exposes_neutral_spatial_view_without_mutation():
     import copy
     from trpg_core.map import build_map
@@ -319,7 +343,7 @@ def test_well_snapshot_exposes_neutral_spatial_view_without_mutation():
     state.transition_location("well")
     game_map = build_map(state.scenario, "well")
     before = (copy.deepcopy(state.snapshot()), state.player_position, state.focus_state)
-    snapshot = build_render_snapshot(state, active_game_map=game_map)
+    snapshot = build_render_snapshot(state, active_game_map=game_map, lod_runtime=state.lod_runtime)
     scene = snapshot.spatial_scene
     assert (scene.width, scene.height) == (7, 5)
     assert scene.player_position.x == 3 and scene.player_position.y == 3
@@ -330,6 +354,7 @@ def test_well_snapshot_exposes_neutral_spatial_view_without_mutation():
         (3, 4, "村の広場", "move"), (3, 0, "物見櫓", "move"),
     ]
     assert scene.objects[0].focus_candidate is True
+    assert scene.objects[0].visual_asset_key == "goblin/well/lod0"
     assert (state.snapshot(), state.player_position, state.focus_state) == before
 
 

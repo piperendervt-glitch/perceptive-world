@@ -227,15 +227,18 @@ def _dwell_setup():
 
 def test_dwell_focus_observe_intervals_and_completion_use_canonical_actions():
     model, scheduler, actions, dwell, object_id = _dwell_setup()
+    assert model.snapshot.spatial_scene.objects[0].visual_asset_key == "goblin/well/lod0"
     dwell.enter(object_id)
     assert actions == []
     focus_timer = dwell.pending_after_ids[-1]; scheduler.fire(focus_timer)
     assert actions == [SetFocusAction(object_id)]
     observe_timer = dwell.pending_after_ids[-1]; scheduler.fire(observe_timer)
     assert actions[-1] == ObserveFocusedObjectAction()
+    assert model.snapshot.spatial_scene.objects[0].visual_asset_key == "goblin/well/lod1"
     for _ in range(5):
         scheduler.fire(dwell.pending_after_ids[-1])
     assert model.snapshot.focused_object_lod.current_lod == 3
+    assert model.snapshot.spatial_scene.objects[0].visual_asset_key == "goblin/well/lod3"
     count = len(actions); scheduler.fire(dwell.pending_after_ids[-1])
     assert len(actions) == count
     assert "観察" in dwell.feedback

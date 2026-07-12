@@ -186,12 +186,32 @@ class SpatialObjectView:
     blocks_movement: bool
     focus_candidate: bool
     glyph: str = "?"
+    visual_asset_key: str | None = None
 
     def __post_init__(self):
         if type(self.label) is not str or not self.label:
             raise ValueError("spatial object label must be non-empty")
         if type(self.glyph) is not str or not self.glyph:
             raise ValueError("spatial object glyph must be non-empty")
+        if self.visual_asset_key is not None and (
+            type(self.visual_asset_key) is not str or not self.visual_asset_key
+        ):
+            raise ValueError("visual_asset_key must be non-empty text or None")
+
+
+def visual_asset_key_for_object(object_id: WorldObjectId, lod_runtime: LodRuntimeState | None) -> str | None:
+    if not isinstance(object_id, WorldObjectId):
+        raise ValueError("object_id must be a WorldObjectId")
+    if lod_runtime is not None and not isinstance(lod_runtime, LodRuntimeState):
+        raise ValueError("lod_runtime must be a LodRuntimeState or None")
+    if object_id != WorldObjectId("goblin", "location/well"):
+        return None
+    content = lod_content_for_world_object(object_id)
+    progress = None if lod_runtime is None else lod_progress_for_world_object(lod_runtime, object_id)
+    if progress is None:
+        progress = initial_lod_progress(content)
+    lod = derive_current_lod(content.lod_spec, progress.attention, progress.lod_state)
+    return f"goblin/well/lod{lod}"
 
 
 _LANDMARK_GLYPHS = {
@@ -423,6 +443,7 @@ def build_render_snapshot(
                     landmark_glyph_for_label(
                         visible_by_id[placement.object_id].spec.label,
                     ),
+                    visual_asset_key_for_object(placement.object_id, lod_runtime),
                 )
                 for placement in spec.object_placements
                 if placement.object_id in visible_by_id
