@@ -5,11 +5,15 @@ import pytest
 
 from trpg_core.spatial import (
     MovementStep,
+    DepartSceneExit,
+    MoveToSceneExit,
     ObjectPosition,
     PlayerPosition,
     SceneBounds,
     SceneCell,
     SceneSpatialSpec,
+    SpatialEntrySpawn,
+    SpatialExit,
     SpatialObjectPlacement,
     can_player_occupy,
     is_blocked_cell,
@@ -56,6 +60,36 @@ def test_coordinate_models_are_strict_frozen_hashable_values(model):
 def test_position_models_do_not_conflate_other_domain_state():
     assert {field.name for field in dataclasses.fields(PlayerPosition)} == {"x", "y"}
     assert {field.name for field in dataclasses.fields(ObjectPosition)} == {"x", "y"}
+
+
+def test_entry_and_exit_models_are_strict_frozen_domain_values():
+    source = WorldObjectId("test", "location/plaza")
+    destination = WorldObjectId("test", "location/well")
+    entry = SpatialEntrySpawn(source, PlayerPosition(1, 2))
+    move = MoveToSceneExit(destination)
+    depart = DepartSceneExit()
+    exit_ = SpatialExit(SceneCell(3, 0), move)
+    assert {field.name for field in dataclasses.fields(entry)} == {
+        "source_scene_id", "position",
+    }
+    assert {field.name for field in dataclasses.fields(move)} == {
+        "destination_scene_id",
+    }
+    assert dataclasses.fields(depart) == ()
+    assert {field.name for field in dataclasses.fields(exit_)} == {
+        "cell", "transition",
+    }
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        entry.position = PlayerPosition(2, 2)
+    for constructor, args in (
+        (SpatialEntrySpawn, ("plaza", PlayerPosition(1, 2))),
+        (SpatialEntrySpawn, (source, SceneCell(1, 2))),
+        (MoveToSceneExit, ("well",)),
+        (SpatialExit, (PlayerPosition(3, 0), move)),
+        (SpatialExit, (SceneCell(3, 0), destination)),
+    ):
+        with pytest.raises(ValueError):
+            constructor(*args)
 
 
 @pytest.mark.parametrize("field,value", [

@@ -2,8 +2,21 @@ import dataclasses
 
 import pytest
 
-from trpg_core.spatial import ObjectPosition, PlayerPosition, can_player_occupy
-from trpg_core.spatial_content import SceneSpatialDefinition, spatial_definition_for_scene
+from trpg_core.spatial import (
+    MoveToSceneExit,
+    ObjectPosition,
+    PlayerPosition,
+    SceneCell,
+    SpatialEntrySpawn,
+    SpatialExit,
+    can_player_occupy,
+)
+from trpg_core.spatial_content import (
+    SceneSpatialDefinition,
+    entry_spawn_from_scene,
+    spatial_definition_for_scene,
+    spatial_exit_at_cell,
+)
 from trpg_core.world import WorldObjectId
 
 
@@ -30,13 +43,46 @@ def test_scene_lookup_has_no_fallback(scene_id):
 
 def test_definition_has_only_domain_fields_and_strict_types():
     definition = spatial_definition_for_scene("well")
-    assert {field.name for field in dataclasses.fields(definition)} == {"spec", "player_spawn"}
+    assert {field.name for field in dataclasses.fields(definition)} == {
+        "spec", "player_spawn", "entry_spawns", "exits",
+    }
+    assert definition.entry_spawns == ()
+    assert definition.exits == ()
     with pytest.raises(ValueError):
         SceneSpatialDefinition({}, PlayerPosition(1, 2))
     with pytest.raises(ValueError):
         SceneSpatialDefinition(definition.spec, (1, 2))
     with pytest.raises(ValueError):
         SceneSpatialDefinition(definition.spec, PlayerPosition(3, 2))
+
+
+def test_definition_validates_entry_exit_aggregates_and_exact_queries():
+    base = spatial_definition_for_scene("well")
+    plaza = WorldObjectId("goblin", "location/plaza")
+    lookout = WorldObjectId("goblin", "location/lookout")
+    entry = SpatialEntrySpawn(plaza, PlayerPosition(2, 1))
+    exit_ = SpatialExit(SceneCell(5, 2), MoveToSceneExit(lookout))
+    definition = SceneSpatialDefinition(
+        base.spec, base.player_spawn, (entry,), (exit_,),
+    )
+    assert entry_spawn_from_scene(definition, plaza) == PlayerPosition(2, 1)
+    assert entry_spawn_from_scene(
+        definition, WorldObjectId("other", "location/plaza"),
+    ) is None
+    assert spatial_exit_at_cell(definition, SceneCell(5, 2)) == exit_
+    assert spatial_exit_at_cell(definition, SceneCell(4, 2)) is None
+
+
+@pytest.mark.parametrize("entries,exits", [
+    ([], ()),
+    ((), []),
+    (("entry",), ()),
+    ((), ("exit",)),
+])
+def test_definition_rejects_non_tuple_or_wrong_entry_exit_values(entries, exits):
+    base = spatial_definition_for_scene("well")
+    with pytest.raises(ValueError):
+        SceneSpatialDefinition(base.spec, base.player_spawn, entries, exits)
 
 
 def test_spatial_content_has_no_renderer_metadata():

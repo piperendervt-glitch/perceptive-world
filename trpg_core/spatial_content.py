@@ -8,8 +8,11 @@ from .spatial import (
     SceneBounds,
     SceneCell,
     SceneSpatialSpec,
+    SpatialEntrySpawn,
+    SpatialExit,
     SpatialObjectPlacement,
     can_player_occupy,
+    is_walkable_cell,
 )
 from .world import WorldObjectId
 
@@ -18,6 +21,8 @@ from .world import WorldObjectId
 class SceneSpatialDefinition:
     spec: SceneSpatialSpec
     player_spawn: PlayerPosition
+    entry_spawns: tuple[SpatialEntrySpawn, ...] = ()
+    exits: tuple[SpatialExit, ...] = ()
 
     def __post_init__(self) -> None:
         if type(self.spec) is not SceneSpatialSpec:
@@ -26,6 +31,83 @@ class SceneSpatialDefinition:
             raise ValueError("player_spawn must be a PlayerPosition")
         if not can_player_occupy(self.spec, self.player_spawn):
             raise ValueError("player_spawn must be occupiable")
+        if type(self.entry_spawns) is not tuple:
+            raise ValueError("entry_spawns must be a tuple")
+        if type(self.exits) is not tuple:
+            raise ValueError("exits must be a tuple")
+
+        source_ids: set[WorldObjectId] = set()
+        entry_positions: set[PlayerPosition] = set()
+        for entry in self.entry_spawns:
+            if type(entry) is not SpatialEntrySpawn:
+                raise ValueError("entry spawn must be a SpatialEntrySpawn")
+            if entry.source_scene_id in source_ids:
+                raise ValueError("duplicate entry source scene ID")
+            if entry.position in entry_positions:
+                raise ValueError("duplicate entry position")
+            if not can_player_occupy(self.spec, entry.position):
+                raise ValueError("entry position must be walkable and unblocked")
+            source_ids.add(entry.source_scene_id)
+            entry_positions.add(entry.position)
+
+        exit_cells: set[SceneCell] = set()
+        object_cells = {
+            SceneCell(placement.position.x, placement.position.y)
+            for placement in self.spec.object_placements
+        }
+        for exit_ in self.exits:
+            if type(exit_) is not SpatialExit:
+                raise ValueError("exit must be a SpatialExit")
+            if exit_.cell in exit_cells:
+                raise ValueError("duplicate exit cell")
+            if not is_walkable_cell(self.spec, exit_.cell):
+                raise ValueError("exit cell must be walkable")
+            if exit_.cell in object_cells:
+                raise ValueError("exit cell must not overlap an object")
+            if PlayerPosition(exit_.cell.x, exit_.cell.y) in entry_positions:
+                raise ValueError("entry position must not overlap an exit cell")
+            exit_cells.add(exit_.cell)
+
+
+def scene_world_object_id(definition: SceneSpatialDefinition) -> WorldObjectId:
+    if type(definition) is not SceneSpatialDefinition:
+        raise ValueError("definition must be a SceneSpatialDefinition")
+    expected_local_id = f"location/{definition.spec.scene_id}"
+    matches = tuple(
+        placement.object_id
+        for placement in definition.spec.object_placements
+        if placement.object_id.local_id == expected_local_id
+    )
+    if len(matches) != 1:
+        raise ValueError("definition must contain its exact scene object")
+    return matches[0]
+
+
+def entry_spawn_from_scene(
+    definition: SceneSpatialDefinition,
+    source_scene_id: WorldObjectId,
+) -> PlayerPosition | None:
+    if type(definition) is not SceneSpatialDefinition:
+        raise ValueError("definition must be a SceneSpatialDefinition")
+    if type(source_scene_id) is not WorldObjectId:
+        raise ValueError("source_scene_id must be a WorldObjectId")
+    entry = next(
+        (entry for entry in definition.entry_spawns
+         if entry.source_scene_id == source_scene_id),
+        None,
+    )
+    return entry.position if entry is not None else None
+
+
+def spatial_exit_at_cell(
+    definition: SceneSpatialDefinition,
+    cell: SceneCell,
+) -> SpatialExit | None:
+    if type(definition) is not SceneSpatialDefinition:
+        raise ValueError("definition must be a SceneSpatialDefinition")
+    if type(cell) is not SceneCell:
+        raise ValueError("cell must be a SceneCell")
+    return next((exit_ for exit_ in definition.exits if exit_.cell == cell), None)
 
 
 _WELL_DEFINITION = SceneSpatialDefinition(

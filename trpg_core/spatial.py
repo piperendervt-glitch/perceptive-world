@@ -38,6 +38,16 @@ class PlayerPosition:
 
 
 @dataclass(frozen=True)
+class SpatialEntrySpawn:
+    source_scene_id: WorldObjectId
+    position: PlayerPosition
+
+    def __post_init__(self) -> None:
+        _require_exact(self.source_scene_id, WorldObjectId, "source_scene_id")
+        _require_exact(self.position, PlayerPosition, "position")
+
+
+@dataclass(frozen=True)
 class ObjectPosition:
     x: int
     y: int
@@ -81,6 +91,35 @@ class SpatialObjectPlacement:
         _require_exact(self.object_id, WorldObjectId, "object_id")
         _require_exact(self.position, ObjectPosition, "position")
         _require_exact(self.blocks_movement, bool, "blocks_movement")
+
+
+@dataclass(frozen=True)
+class MoveToSceneExit:
+    destination_scene_id: WorldObjectId
+
+    def __post_init__(self) -> None:
+        _require_exact(
+            self.destination_scene_id, WorldObjectId, "destination_scene_id",
+        )
+
+
+@dataclass(frozen=True)
+class DepartSceneExit:
+    pass
+
+
+SpatialExitTransition = MoveToSceneExit | DepartSceneExit
+
+
+@dataclass(frozen=True)
+class SpatialExit:
+    cell: SceneCell
+    transition: SpatialExitTransition
+
+    def __post_init__(self) -> None:
+        _require_exact(self.cell, SceneCell, "cell")
+        if type(self.transition) not in (MoveToSceneExit, DepartSceneExit):
+            raise ValueError("transition must be a spatial exit transition")
 
 
 @dataclass(frozen=True)
