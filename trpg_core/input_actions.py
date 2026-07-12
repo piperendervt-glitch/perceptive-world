@@ -101,6 +101,34 @@ class ClearFocusAction:
     pass
 
 
+@dataclass(frozen=True)
+class ObserveFocusedObjectAction:
+    pass
+
+
+@dataclass(frozen=True)
+class InspectFocusedObjectAction:
+    pass
+
+
+@dataclass(frozen=True)
+class ApplyLodUnlockAction:
+    object_id: WorldObjectId
+    target_cap: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.object_id, WorldObjectId):
+            raise ValueError("object_id must be a WorldObjectId")
+        if type(self.target_cap) is not int or self.target_cap < 0:
+            raise ValueError("target_cap must be a non-negative int")
+
+
+LodCanonicalAction: TypeAlias = (
+    ObserveFocusedObjectAction | InspectFocusedObjectAction
+    | ApplyLodUnlockAction
+)
+
+
 VillageControllerEvent: TypeAlias = (
     MoveToLocationAction | ExploreAction | DepartAction
     | SetFocusAction | ClearFocusAction

@@ -17,8 +17,11 @@ from trpg_core.input_actions import (
 from trpg_core.world import WorldObjectId
 
 from trpg_core.input_actions import (
+    ApplyLodUnlockAction,
     DirectCommand,
+    InspectFocusedObjectAction,
     MetaRequest,
+    ObserveFocusedObjectAction,
     SelectMenuIndex,
     parse_raw_input,
     resolve_combat_command,
@@ -45,6 +48,30 @@ def test_input_models_are_frozen_and_validate_values():
         DirectCommand("1")
     with pytest.raises(ValueError):
         DirectCommand("help")
+
+
+def test_canonical_lod_actions_are_frozen_and_separate_from_village_events():
+    import typing
+    from trpg_core.input_actions import VillageControllerEvent
+
+    well = WorldObjectId("goblin", "location/well")
+    actions = (ObserveFocusedObjectAction(), InspectFocusedObjectAction(),
+               ApplyLodUnlockAction(well, 0))
+    assert not actions[0].__dict__ and not actions[1].__dict__
+    assert actions[2].object_id == well and actions[2].target_cap == 0
+    for action in actions:
+        with pytest.raises(FrozenInstanceError):
+            action.extra = "raw input"
+    assert all(type(action) not in typing.get_args(VillageControllerEvent)
+               for action in actions)
+
+
+@pytest.mark.parametrize("target", [-1, True, False, 1.0, "1", None])
+def test_lod_unlock_action_validates_exact_id_and_cap(target):
+    with pytest.raises(ValueError):
+        ApplyLodUnlockAction(WorldObjectId("goblin", "location/well"), target)
+    with pytest.raises(ValueError):
+        ApplyLodUnlockAction("goblin:location/well", 1)
 
 
 @pytest.mark.parametrize("raw", ["", "   ", "\r\n"])
