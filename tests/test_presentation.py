@@ -355,6 +355,7 @@ def test_well_snapshot_exposes_neutral_spatial_view_without_mutation():
     ]
     assert scene.objects[0].focus_candidate is True
     assert scene.objects[0].visual_asset_key == "goblin/well/lod0"
+    assert snapshot.player.physical_damage_bonus == 0
     assert (state.snapshot(), state.player_position, state.focus_state) == before
 
 

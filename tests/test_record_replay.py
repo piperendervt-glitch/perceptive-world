@@ -25,9 +25,9 @@ LEGACY_INPUTS = [
 ]
 
 
-def test_new_fixture_is_v5_and_canonicalizes_choice_labels():
+def test_new_fixture_is_v6_and_canonicalizes_choice_labels():
     fixture = fixture_from_inputs("envoy", 0, LEGACY_INPUTS, respawn=True)
-    assert fixture["format_version"] == 5
+    assert fixture["format_version"] == 6
     assert fixture["scenario"] == "envoy"
     assert fixture["seed"] == 0
     assert "explore:rapport" in fixture["inputs"]

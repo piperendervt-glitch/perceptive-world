@@ -264,6 +264,18 @@ def test_save_v5_story_position_round_trip_and_trigger_rejection(tmp_path):
     assert _fingerprint(live) == before
 
 
+@pytest.mark.parametrize("bonus", [0, 1, 2, 3])
+def test_save_v5_round_trips_applied_physical_damage_bonus(tmp_path, bonus):
+    live = _state()
+    live.effects = ([{"type": "damage_bonus", "kind": "physical", "value": bonus}]
+                    if bonus else [])
+    ConsoleController(live, str(tmp_path))._save("bonus")
+    live.effects = [{"type": "damage_bonus", "kind": "physical", "value": 99}]
+    assert ConsoleController(live, str(tmp_path))._load("bonus") is True
+    from trpg_core.rules import effect_damage_bonus
+    assert effect_damage_bonus(live, "physical") == bonus
+
+
 @pytest.mark.parametrize("payload", [
     None, {}, [True],
     [{"object_id": "goblin:location/well", "attention_level": True, "unlocked_lod_cap": 1}],

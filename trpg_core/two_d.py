@@ -329,6 +329,9 @@ class TwoDSessionModel:
             self.feedback = str(exc)
             return False
         self.feedback = "Accepted"
+        from .input_actions import ExploreAction
+        if isinstance(action, ExploreAction) and self.state.log:
+            self.feedback = str(self.state.log[-1].get("gain", self.feedback))
         self.snapshot = self._build_snapshot()
         return True
 
@@ -651,10 +654,13 @@ def run_two_d_session(seed: int, scenario_id: str) -> None:
                 )
             )
         elif model.phase == "village":
-            status_lines = 4
+            player = snap.player
+            status_lines = 8
             status_text = (
-                f"Scene: {snap.scene_title or 'なし'}\nPlayer: {pos}\n"
-                f"Focus: {focus}\nLOD: {lod}"
+                f"Scene: {snap.scene_title or 'なし'}\nPlayer\n{player.name}\n"
+                f"HP {player.hp} / {player.hp_max}\nMP {player.mp} / {player.mp_max}\n"
+                f"薬草 {player.recovery_item_count}\n物理ダメージ補正 +{player.physical_damage_bonus}\n"
+                f"Position: {pos}\nFocus: {focus}\nLOD: {lod}"
             )
         else:
             status_lines = 1

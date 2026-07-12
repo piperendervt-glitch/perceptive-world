@@ -76,7 +76,7 @@ def test_all_fixtures_replay_state():
 
 def test_record_replay_roundtrip():
     for name, fx in _all_fixtures():
-        if fx.get("format_version") in {1, 2, 3, 4, 5}:
+        if fx.get("format_version") in {1, 2, 3, 4, 5, 6}:
             ok, actual, diff = replay_fixture(fx, mode="full")
             assert ok and actual == fx["expected_log"], f"{name}: v1 replay不一致 -> {diff}"
             continue
@@ -163,6 +163,17 @@ def test_story_spatial_v5_fixture_replays_twice():
     second = replay_fixture(fx, mode="full")
     assert first == second
     assert first[0] and first[1] == fx["expected_log"]
+
+
+def test_well_effect_v6_fixture_uses_plus_three_and_replays_twice():
+    fx = load_fixture(os.path.join(FIXTURE_DIR, "well_effect_play_v6.json"))
+    assert fx["format_version"] == 6
+    assert "explore:well" in fx["inputs"]
+    well_event = next(e for e in fx["expected_log"] if e.get("type") == "explore" and e.get("place") == "well")
+    assert well_event["gain"].endswith("+3")
+    first = replay_fixture(fx, mode="full")
+    second = replay_fixture(fx, mode="full")
+    assert first == second and first[0]
 
 
 # ---------------------------------------------------------------------------

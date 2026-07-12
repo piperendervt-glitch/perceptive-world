@@ -68,6 +68,9 @@ def test_session_model_connects_actions_keys_click_and_redraw_to_shared_engine()
     assert model.snapshot.focused_object_lod.current_lod == 1
     model.handle_key("i", "i")
     assert model.snapshot.focused_object_lod.current_lod == 2
+    model.activate_available_action(0)
+    assert model.snapshot.player.physical_damage_bonus == 2
+    assert "物理ダメージ +2" in model.feedback
     assert model.handle_key("q", "q") == "quit" and model.closed
 
 

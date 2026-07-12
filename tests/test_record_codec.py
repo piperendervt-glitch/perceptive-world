@@ -11,13 +11,13 @@ from trpg_core.record_codec import (
 
 
 @pytest.mark.parametrize("record, expected", [
-    ({}, 0), ({"format_version": 0}, 0), ({"format_version": 1}, 1), ({"format_version": 2}, 2), ({"format_version": 3}, 3), ({"format_version": 4}, 4), ({"format_version": 5}, 5),
+    ({}, 0), ({"format_version": 0}, 0), ({"format_version": 1}, 1), ({"format_version": 2}, 2), ({"format_version": 3}, 3), ({"format_version": 4}, 4), ({"format_version": 5}, 5), ({"format_version": 6}, 6),
 ])
 def test_record_format_version(record, expected):
     assert record_format_version(record) == expected
 
 
-@pytest.mark.parametrize("value", [True, False, "1", 1.0, -1, 6, None])
+@pytest.mark.parametrize("value", [True, False, "1", 1.0, -1, 7, None])
 def test_record_format_version_rejects_invalid_values(value):
     with pytest.raises(ValueError, match="format_version"):
         record_format_version({"format_version": value})

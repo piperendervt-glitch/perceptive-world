@@ -17,7 +17,7 @@ from .lod_actions import (
     lod_progress_for_world_object,
 )
 from .lod_content import lod_content_for_world_object, visible_facts_for_lod
-from .rules import modifier
+from .rules import effect_damage_bonus, modifier
 from .world import (
     WorldFact,
     WorldObjectId,
@@ -136,6 +136,7 @@ class PlayerView:
     attributes: tuple[AttributeView, ...] = field(default_factory=tuple)
     buffs: tuple[str, ...] = field(default_factory=tuple)
     name: str = "H"
+    physical_damage_bonus: int = 0
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "attributes", tuple(self.attributes))
@@ -399,6 +400,7 @@ def build_render_snapshot(
         pending_recovery_count=int(context.pending_recovery_count),
         attributes=attributes,
         buffs=tuple(str(label) for label in state.buff_labels),
+        physical_damage_bonus=effect_damage_bonus(state, "physical"),
     )
     focus_state = getattr(state, "focus_state", None)
     focused_id = getattr(focus_state, "focused_object_id", None)

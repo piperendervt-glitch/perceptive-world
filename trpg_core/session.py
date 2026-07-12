@@ -465,6 +465,7 @@ class ScriptedController:
 
     def __init__(self, explores, node_choices, combat_cmds):
         self.legacy_village_batch = True
+        self.well_effect_profile = "legacy"
         self._explores = list(explores)
         self._village_events = deque()
         self._choices = deque(node_choices)   # ノード選択（遭遇順）
@@ -566,7 +567,37 @@ def _village_context(state, game_map, picked) -> VillageInputContext:
     )
 
 
-def _apply_village_action(state, game_map, picked, action, *, legacy_batch=False) -> bool:
+def _current_well_lod(state) -> int:
+    from .lod import derive_current_lod
+    from .lod_actions import initial_lod_progress, lod_progress_for_world_object
+    from .lod_content import lod_content_for_world_object
+    object_id = WorldObjectId("goblin", "location/well")
+    content = lod_content_for_world_object(object_id)
+    progress = lod_progress_for_world_object(state.lod_runtime, object_id)
+    if progress is None:
+        progress = initial_lod_progress(content)
+    return derive_current_lod(content.lod_spec, progress.attention, progress.lod_state)
+
+
+def _well_explore_result(state, profile):
+    if profile == "legacy":
+        return None, None
+    if profile != "current":
+        raise ValueError("unknown well effect profile")
+    from .well_effects import well_physical_damage_bonus_for_lod
+    bonus = well_physical_damage_bonus_for_lod(_current_well_lod(state))
+    effect = {"type": "damage_bonus", "kind": "physical", "value": bonus}
+    gains = {
+        0: "古井戸を調べたが、役立つものは見つからなかった。物理ダメージ補正は変化しない。",
+        1: "錆びた短剣：物理ダメージ +1",
+        2: "錆びた短剣：物理ダメージ +2",
+        3: "状態のよい錆びた短剣：物理ダメージ +3",
+    }
+    return effect, gains[bonus]
+
+
+def _apply_village_action(state, game_map, picked, action, *, legacy_batch=False,
+                          well_effect_profile="current") -> bool:
     """Validate and apply one canonical event. Return True only for depart."""
     from . import village
     context = _village_context(state, game_map, picked)
@@ -629,7 +660,10 @@ def _apply_village_action(state, game_map, picked, action, *, legacy_batch=False
                      if legacy_batch else context.explore_keys)
         if action.key not in available:
             raise ValueError("explore key is not currently available")
-        village.explore(state, action.key)
+        effect = gain = None
+        if state.scenario.id == "goblin" and action.key == "well":
+            effect, gain = _well_explore_result(state, well_effect_profile)
+        village.explore(state, action.key, effect_override=effect, gain_override=gain)
         picked.append(action.key)
         return False
     if isinstance(action, DepartAction):
@@ -666,7 +700,8 @@ def _run_village(state: GameState, controller, *, on_village_event_applied=None)
         try:
             departed = _apply_village_action(
                     state, game_map, picked, action,
-                    legacy_batch=bool(getattr(controller, "legacy_village_batch", False)))
+                    legacy_batch=bool(getattr(controller, "legacy_village_batch", False)),
+                    well_effect_profile=getattr(controller, "well_effect_profile", "current"))
         except ValueError as exc:
             if hasattr(controller, "village_event_rejected"):
                 controller.village_event_rejected(action, exc)

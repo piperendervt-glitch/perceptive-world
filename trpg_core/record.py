@@ -176,6 +176,7 @@ def fixture_from_inputs(
     controller = FixtureController(
         inputs, state.scenario, format_version=input_format_version,
     )
+    controller.well_effect_profile = "current"
     _result, focus_trace, lod_trace, position_trace = _run_with_traces(state, controller)
     controller.assert_all_events_consumed()
     fixture = {"format_version": CURRENT_RECORD_FORMAT_VERSION,
