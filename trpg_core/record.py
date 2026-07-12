@@ -24,11 +24,15 @@ import os
 import sys
 
 from .input_actions import (
-    ClearFocusAction, DepartAction, ExploreAction, MoveToLocationAction,
-    SetFocusAction,
+    ApplyLodUnlockAction, ClearFocusAction, DepartAction, ExploreAction,
+    InspectFocusedObjectAction, MoveToLocationAction, ObserveFocusedObjectAction,
+    MovePlayerToPositionAction, SetFocusAction,
 )
 
-from .replay import FixtureController
+from .replay import (
+    FixtureController, lod_runtime_trace_entry, position_trace_entry,
+    serialize_lod_trace, serialize_position_trace,
+)
 from .record_codec import (
     CURRENT_RECORD_FORMAT_VERSION,
     serialize_record_token,
@@ -42,6 +46,26 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 FIXTURE_DIR = os.path.join(os.path.dirname(__file__), os.pardir, "tests", "fixtures")
 
 
+def _run_with_traces(state, controller):
+    from .session import run_session
+    focus_trace = []
+    lod_trace = []
+    position_trace = []
+
+    def observe(action, authoritative_focus):
+        if isinstance(action, (SetFocusAction, ClearFocusAction)):
+            focus_trace.append(
+                None if authoritative_focus is None
+                else serialize_world_object_id(authoritative_focus)
+            )
+        lod_trace.append(lod_runtime_trace_entry(state.lod_runtime))
+        position_trace.append(position_trace_entry(state.player_position))
+
+    result = run_session(state, controller, on_village_event_applied=observe)
+    return (result, focus_trace, serialize_lod_trace(lod_trace),
+            serialize_position_trace(position_trace))
+
+
 class RecordingController:
     """任意の base コントローラをラップし、供給された入力を型付きで記録する。
 
@@ -53,6 +77,7 @@ class RecordingController:
         self.base = base
         self.scenario = scenario
         self.inputs: list[str] = []
+        self._pending_village_token: str | None = None
 
     def explores(self):
         keys = list(self.base.explores())
@@ -68,19 +93,45 @@ class RecordingController:
         if isinstance(event, MoveToLocationAction):
             token = serialize_record_token(
                 "move-to", serialize_world_object_id(event.destination_object_id))
+        elif isinstance(event, MovePlayerToPositionAction):
+            token = serialize_record_token(
+                "move-player-to", f"{event.destination.x},{event.destination.y}",
+            )
         elif isinstance(event, SetFocusAction):
             token = serialize_record_token(
                 "focus:set", serialize_world_object_id(event.object_id))
         elif isinstance(event, ClearFocusAction):
             token = serialize_record_token("focus:clear")
+        elif isinstance(event, ObserveFocusedObjectAction):
+            token = serialize_record_token("observe")
+        elif isinstance(event, InspectFocusedObjectAction):
+            token = serialize_record_token("inspect")
+        elif isinstance(event, ApplyLodUnlockAction):
+            token = serialize_record_token(
+                "lod-unlock",
+                f"{serialize_world_object_id(event.object_id)}:{event.target_cap}",
+            )
         elif isinstance(event, ExploreAction):
             token = serialize_record_token("explore", event.key)
         elif isinstance(event, DepartAction):
             token = serialize_record_token("depart")
         else:
             return event
-        self.inputs.append(token)
+        if self._pending_village_token is not None:
+            raise RuntimeError("previous village event has not been applied")
+        self._pending_village_token = token
         return event
+
+    def village_event_applied(self, event) -> None:
+        if self._pending_village_token is None:
+            return
+        self.inputs.append(self._pending_village_token)
+        self._pending_village_token = None
+
+    def village_event_rejected(self, event, error) -> None:
+        self._pending_village_token = None
+        if hasattr(self.base, "announce"):
+            self.base.announce(str(error))
 
     def choice(self, node, options):
         key = self.base.choice(node, options)
@@ -103,29 +154,39 @@ def _new_state(scenario_id: str, seed: int, respawn: bool):
 
 def build_fixture(scenario_id: str, seed: int, base_controller, respawn=False) -> dict:
     """base_controller でセッションを走らせ、入力列と結果ログを録ってフィクスチャ化する。"""
-    from .session import run_session
     state = _new_state(scenario_id, seed, respawn)
     rec = RecordingController(base_controller, state.scenario)
-    run_session(state, rec)
+    _result, focus_trace, lod_trace, position_trace = _run_with_traces(state, rec)
     fixture = {"format_version": CURRENT_RECORD_FORMAT_VERSION,
                "scenario": scenario_id, "seed": seed, "inputs": rec.inputs,
-               "expected_log": state.log}
+               "expected_log": state.log,
+               "expected_focus_trace": focus_trace,
+               "expected_lod_trace": lod_trace,
+               "expected_position_trace": position_trace}
     if respawn:
         fixture["respawn"] = True
     return fixture
 
 
-def fixture_from_inputs(scenario_id: str, seed: int, inputs, respawn=False) -> dict:
+def fixture_from_inputs(
+    scenario_id: str, seed: int, inputs, respawn=False, *, input_format_version=0,
+) -> dict:
     """既にある型付き入力列からフィクスチャを生成（expected_log を再生成）。"""
-    from .session import run_session
     state = _new_state(scenario_id, seed, respawn)
-    controller = FixtureController(inputs, state.scenario, format_version=0)
-    run_session(state, controller)
+    controller = FixtureController(
+        inputs, state.scenario, format_version=input_format_version,
+    )
+    controller.well_effect_profile = "current"
+    controller.village_effect_profile = "all_current"
+    _result, focus_trace, lod_trace, position_trace = _run_with_traces(state, controller)
     controller.assert_all_events_consumed()
     fixture = {"format_version": CURRENT_RECORD_FORMAT_VERSION,
                "scenario": scenario_id, "seed": seed,
                "inputs": controller.canonical_inputs,
-               "expected_log": state.log}
+               "expected_log": state.log,
+               "expected_focus_trace": focus_trace,
+               "expected_lod_trace": lod_trace,
+               "expected_position_trace": position_trace}
     if respawn:
         fixture["respawn"] = True
     return fixture
@@ -152,13 +213,16 @@ def _record_interactive(scenario_id: str, seed: int, ui_mode: str = "menu") -> d
     print("=" * 60)
     if scenario.intro:
         print(scenario.intro)
-    result = run_session(state, rec)
+    result, focus_trace, lod_trace, position_trace = _run_with_traces(state, rec)
     print()
     print(scenario.ending_text(result))
     print(f"\n>>> 結果: {result}")
     fixture = {"format_version": CURRENT_RECORD_FORMAT_VERSION,
                "scenario": scenario_id, "seed": seed, "inputs": rec.inputs,
-               "expected_log": state.log}
+               "expected_log": state.log,
+               "expected_focus_trace": focus_trace,
+               "expected_lod_trace": lod_trace,
+               "expected_position_trace": position_trace}
     if state.respawn_on_defeat:
         # respawn が実際に起きたかは inputs/ログから判断できるが、既定 True で保存しても
         # 再生時に defeat しなければ無影響。明示のため付けておく。

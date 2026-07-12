@@ -7,9 +7,12 @@ import pytest
 
 from trpg_core.record import fixture_from_inputs
 from trpg_core.replay import (
-    FixtureController, assert_focus_trace_matches, expected_focus_trace,
-    load_fixture, replay_fixture,
+    FixtureController, assert_focus_trace_matches, assert_lod_trace_matches,
+    assert_position_trace_matches, expected_focus_trace, expected_lod_trace,
+    expected_position_trace, load_fixture, replay_fixture,
 )
+from trpg_core.input_actions import MovePlayerToPositionAction
+from trpg_core.spatial import PlayerPosition
 from trpg_core.world import WorldObjectId
 from trpg_core.scenario_loader import load_scenario
 
@@ -22,9 +25,9 @@ LEGACY_INPUTS = [
 ]
 
 
-def test_new_fixture_is_v1_and_canonicalizes_choice_labels():
+def test_new_fixture_is_v7_and_canonicalizes_choice_labels():
     fixture = fixture_from_inputs("envoy", 0, LEGACY_INPUTS, respawn=True)
-    assert fixture["format_version"] == 1
+    assert fixture["format_version"] == 7
     assert fixture["scenario"] == "envoy"
     assert fixture["seed"] == 0
     assert "explore:rapport" in fixture["inputs"]
@@ -38,6 +41,64 @@ def test_new_fixture_is_v1_and_canonicalizes_choice_labels():
     assert ok, diff
     assert actual == fixture["expected_log"]
     assert fixture["respawn"] is True
+    assert len(fixture["expected_position_trace"]) == len(fixture["expected_lod_trace"])
+
+
+def test_v4_fixture_inputs_use_current_catalog_position_semantics():
+    legacy = load_fixture(os.path.join(
+        os.path.dirname(__file__), "fixtures", "spatial_play_v3.json",
+    ))["inputs"]
+    inputs = ["move-player-to:3,1"] + [
+        token for token in legacy if not token.startswith("move-player-to:")
+    ]
+    fixture = fixture_from_inputs(
+        "goblin", 7, inputs,
+        input_format_version=4,
+    )
+    assert fixture["inputs"][:2] == [
+        "move-player-to:3,1", "move-to:goblin:location/well",
+    ]
+    assert fixture["expected_position_trace"][:2] == [
+        {"x": 3, "y": 1}, {"x": 3, "y": 3},
+    ]
+    assert fixture["scenario"] == "goblin"
+    assert fixture["seed"] == 7
+    ok, actual, diff = replay_fixture(fixture)
+    assert ok, diff
+    assert actual == fixture["expected_log"]
+    assert len(fixture["expected_position_trace"]) == len(fixture["expected_lod_trace"])
+
+
+def test_fixture_controller_v3_restores_resolved_movement_action():
+    controller = FixtureController(
+        ["move-player-to:2,2"], load_scenario("goblin"), format_version=3,
+    )
+    action = controller.village_action(None)
+    assert action == MovePlayerToPositionAction(PlayerPosition(2, 2))
+    controller.assert_all_events_consumed()
+
+
+@pytest.mark.parametrize("value", [
+    {}, [True], [{"x": 1}], [{"x": 1, "y": 2, "z": 3}],
+    [{"x": True, "y": 2}], [{"x": 1.0, "y": 2}],
+])
+def test_expected_position_trace_rejects_malformed_values(value):
+    with pytest.raises(ValueError, match="expected_position_trace"):
+        expected_position_trace(
+            {"expected_position_trace": value}, format_version=3,
+        )
+
+
+def test_expected_position_trace_is_optional_v3_and_exact():
+    assert expected_position_trace({}, format_version=3) is None
+    expected = expected_position_trace(
+        {"expected_position_trace": [{"x": 1, "y": 2}, None]},
+        format_version=3,
+    )
+    assert expected == ((1, 2), None)
+    assert_position_trace_matches(expected, ((1, 2), None))
+    with pytest.raises(ValueError, match="mismatch"):
+        assert_position_trace_matches(expected, ((1, 2),))
 
 
 @pytest.mark.parametrize("value", [
@@ -139,3 +200,37 @@ def test_focus_v1_field_omission_preserves_existing_replay_behavior():
     del fixture["expected_focus_trace"]
     ok, actual, diff = replay_fixture(fixture, mode="full")
     assert ok and diff is None and actual == fixture["expected_log"]
+
+
+def test_expected_lod_trace_v2_schema_and_exact_comparison():
+    fixture = {"format_version": 2, "expected_lod_trace": [[{
+        "object_id": "goblin:location/well",
+        "attention_level": 6,
+        "unlocked_lod_cap": 3,
+        "current_lod": 3,
+    }]]}
+    parsed = expected_lod_trace(fixture, format_version=2)
+    assert parsed == ((('goblin:location/well', 6, 3, 3),),)
+    assert_lod_trace_matches(parsed, parsed)
+    with pytest.raises(ValueError, match="expected_lod_trace mismatch"):
+        assert_lod_trace_matches(parsed, ())
+
+
+@pytest.mark.parametrize("value", [
+    {}, [True], [[{"object_id": "goblin:location/well"}]],
+    [[{"object_id": "goblin:location/well", "attention_level": True,
+       "unlocked_lod_cap": 3, "current_lod": 1}]],
+])
+def test_expected_lod_trace_rejects_malformed_schema(value):
+    with pytest.raises(ValueError, match="expected_lod_trace"):
+        expected_lod_trace(
+            {"format_version": 2, "expected_lod_trace": value}, format_version=2,
+        )
+
+
+def test_lod_v2_trace_mismatch_fails_after_log_match():
+    path = os.path.join(os.path.dirname(__file__), "fixtures", "lod_play_v2.json")
+    fixture = copy.deepcopy(load_fixture(path))
+    fixture["expected_lod_trace"][-1][0]["current_lod"] = 2
+    with pytest.raises(ValueError, match="expected_lod_trace mismatch"):
+        replay_fixture(fixture, mode="full")

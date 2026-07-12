@@ -12,13 +12,17 @@ from dataclasses import FrozenInstanceError
 
 from trpg_core.input_actions import (
     ClearFocusAction, DepartAction, ExploreAction, MoveToLocationAction,
-    SetFocusAction, resolve_focus_command, resolve_move_action,
+    MovePlayerToPositionAction, SetFocusAction, resolve_focus_command, resolve_move_action,
 )
+from trpg_core.spatial import PlayerPosition
 from trpg_core.world import WorldObjectId
 
 from trpg_core.input_actions import (
+    ApplyLodUnlockAction,
     DirectCommand,
+    InspectFocusedObjectAction,
     MetaRequest,
+    ObserveFocusedObjectAction,
     SelectMenuIndex,
     parse_raw_input,
     resolve_combat_command,
@@ -45,6 +49,48 @@ def test_input_models_are_frozen_and_validate_values():
         DirectCommand("1")
     with pytest.raises(ValueError):
         DirectCommand("help")
+
+
+def test_spatial_action_is_frozen_strict_and_not_a_village_event():
+    import typing
+    from trpg_core.input_actions import VillageControllerEvent
+
+    action = MovePlayerToPositionAction(PlayerPosition(2, 2))
+    assert {field.name for field in dataclasses.fields(action)} == {"destination"}
+    with pytest.raises(FrozenInstanceError):
+        action.destination = PlayerPosition(1, 2)
+    with pytest.raises(ValueError):
+        MovePlayerToPositionAction((2, 2))
+    village_types = set()
+    for member in typing.get_args(VillageControllerEvent):
+        village_types.update(typing.get_args(member) or (member,))
+    assert MovePlayerToPositionAction in village_types
+
+
+def test_canonical_lod_actions_are_frozen_and_part_of_village_events():
+    import typing
+    from trpg_core.input_actions import VillageControllerEvent
+
+    well = WorldObjectId("goblin", "location/well")
+    actions = (ObserveFocusedObjectAction(), InspectFocusedObjectAction(),
+               ApplyLodUnlockAction(well, 0))
+    assert not actions[0].__dict__ and not actions[1].__dict__
+    assert actions[2].object_id == well and actions[2].target_cap == 0
+    for action in actions:
+        with pytest.raises(FrozenInstanceError):
+            action.extra = "raw input"
+    village_types = set()
+    for member in typing.get_args(VillageControllerEvent):
+        village_types.update(typing.get_args(member) or (member,))
+    assert all(type(action) in village_types for action in actions)
+
+
+@pytest.mark.parametrize("target", [-1, True, False, 1.0, "1", None])
+def test_lod_unlock_action_validates_exact_id_and_cap(target):
+    with pytest.raises(ValueError):
+        ApplyLodUnlockAction(WorldObjectId("goblin", "location/well"), target)
+    with pytest.raises(ValueError):
+        ApplyLodUnlockAction("goblin:location/well", 1)
 
 
 @pytest.mark.parametrize("raw", ["", "   ", "\r\n"])

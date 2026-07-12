@@ -9,6 +9,8 @@ import pytest
 
 from trpg_core.map import build_map
 from trpg_core.presentation import (
+    FocusedObjectLodView,
+    VisibleWorldFactView,
     ActionView,
     AttributeView,
     EnemyView,
@@ -22,6 +24,15 @@ from trpg_core.presentation import (
     build_enemy_views,
     build_map_view,
     build_render_snapshot,
+)
+from trpg_core.lod import ObjectAttentionState, ObjectLodState
+from trpg_core.lod_actions import LodRuntimeState, ObjectLodProgress
+from trpg_core.lod_content import lod_content_for_world_object
+from trpg_core.world import WorldFact, WorldObjectId
+from trpg_core.presentation import (
+    focused_object_lod_view, visual_asset_key_for_object,
+    visible_world_fact_view,
+    presentation_label_for_object,
 )
 from trpg_core.scenario_loader import load_scenario
 from trpg_core.session import GameState
@@ -235,3 +246,208 @@ def test_non_map_scene_has_no_world_objects_and_dangling_focus_is_rejected():
     with pytest.raises(ValueError):
         build_render_snapshot(state, PresentationContext(scene_kind="decision"))
     assert (state.snapshot(), state.rng.state(), state.log, state.focus_state) == before
+def test_lod_presentation_views_are_strict_frozen_and_minimal():
+    fact = VisibleWorldFactView("shape", "well_like", "井戸らしき形")
+    view = FocusedObjectLodView(WorldObjectId("goblin", "location/well"), 0, (fact,))
+    assert set(view.__dict__) == {
+        "object_id", "current_lod", "visible_facts", "has_more_observable_detail",
+    }
+    assert view.has_more_observable_detail is False
+    assert set(fact.__dict__) == {"key", "value", "label"}
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        fact.label = "changed"
+    for bad in ("", " x", "x ", 1, None):
+        with pytest.raises(ValueError):
+            VisibleWorldFactView(bad, "v", "label")
+    with pytest.raises(ValueError):
+        FocusedObjectLodView(view.object_id, True, ())
+    with pytest.raises(ValueError):
+        FocusedObjectLodView(view.object_id, 0, [fact])
+
+
+def test_exact_well_fact_label_mapping_rejects_fallbacks():
+    well = WorldObjectId("goblin", "location/well")
+    expected = (
+        ("shape", "well_like", "井戸らしき形"), ("material", "stone", "石造り"),
+        ("age", "old", "古い"), ("pulley", "recent", "新しい滑車"),
+        ("rope", "worn", "擦り切れた縄"),
+        ("mark", "faded_emblem", "消えかけた紋章"),
+    )
+    assert tuple(visible_world_fact_view(well, WorldFact(k, v)).label
+                 for k, v, _ in expected) == tuple(label for _, _, label in expected)
+    with pytest.raises(ValueError):
+        visible_world_fact_view(well, WorldFact("shape", "wrong"))
+    with pytest.raises(ValueError):
+        visible_world_fact_view(WorldObjectId("other", "location/well"),
+                                WorldFact("shape", "well_like"))
+
+
+@pytest.mark.parametrize("local_id,name,fact,label", [
+    ("location/well", "古井戸", WorldFact("shape", "well_like"), "井戸らしき形"),
+    ("location/shrine", "古い祠", WorldFact("shape", "small_shrine"), "小さな祠"),
+    ("location/lookout", "物見櫓", WorldFact("shape", "lookout_tower"), "物見櫓"),
+    ("location/herbhut", "薬草小屋", WorldFact("shape", "small_hut"), "小さな小屋"),
+    ("location/elderhouse", "村長の家", WorldFact("shape", "large_house"), "大きな家"),
+])
+def test_exact_village_object_and_fact_labels(local_id, name, fact, label):
+    object_id = WorldObjectId("goblin", local_id)
+    assert presentation_label_for_object(object_id) == name
+    assert visible_world_fact_view(object_id, fact).label == label
+    assert str(object_id) not in name + label
+
+
+def test_unknown_object_label_mapping_remains_closed():
+    unknown = WorldObjectId("goblin", "location/missing")
+    with pytest.raises(ValueError, match="no presentation label mapping"):
+        presentation_label_for_object(unknown)
+    with pytest.raises(ValueError, match="no presentation label mapping"):
+        visible_world_fact_view(unknown, WorldFact("shape", "small_hut"))
+
+
+@pytest.mark.parametrize("attention, cap, lod, keys", [
+    (0, 3, 0, ("shape",)),
+    (1, 3, 1, ("shape", "material", "age")),
+    (3, 3, 2, ("shape", "material", "age", "pulley", "rope")),
+    (6, 3, 3, ("shape", "material", "age", "pulley", "rope", "mark")),
+    (6, 1, 1, ("shape", "material", "age")),
+])
+def test_focused_lod_projection_exposes_only_current_visible_facts(attention, cap, lod, keys):
+    well = WorldObjectId("goblin", "location/well")
+    progress = ObjectLodProgress(well, ObjectAttentionState(attention), ObjectLodState(cap))
+    runtime = LodRuntimeState((progress,))
+    before = copy.deepcopy(runtime)
+    view = focused_object_lod_view(focused_object_id=well, lod_runtime=runtime)
+    assert view.current_lod == lod
+    assert tuple(f.key for f in view.visible_facts) == keys
+    assert runtime == before
+    assert not any(name in view.__dict__ for name in ("hidden", "attention", "cap"))
+
+
+def test_focused_lod_projection_is_opt_in_and_empty_runtime_is_read_only():
+    well = WorldObjectId("goblin", "location/well")
+    runtime = LodRuntimeState()
+    assert focused_object_lod_view(focused_object_id=None, lod_runtime=runtime) is None
+    assert focused_object_lod_view(focused_object_id=well, lod_runtime=None) is None
+    assert focused_object_lod_view(
+        focused_object_id=WorldObjectId("other", "location/well"), lod_runtime=runtime,
+    ) is None
+    view = focused_object_lod_view(focused_object_id=well, lod_runtime=runtime)
+    assert view.current_lod == 0
+    assert tuple(f.key for f in view.visible_facts) == ("shape",)
+    assert runtime == LodRuntimeState()
+
+
+@pytest.mark.parametrize("scene", ["well", "shrine", "lookout", "herbhut", "elderhouse"])
+@pytest.mark.parametrize("attention,cap", [
+    (0, 3), (1, 3), (3, 3), (6, 3), (6, 1), (6, 2),
+])
+def test_all_lod_objects_project_only_cumulative_authoritative_facts(scene, attention, cap):
+    object_id = WorldObjectId("goblin", f"location/{scene}")
+    content = lod_content_for_world_object(object_id)
+    runtime = LodRuntimeState((ObjectLodProgress(
+        object_id, ObjectAttentionState(attention), ObjectLodState(cap),
+    ),))
+    view = focused_object_lod_view(focused_object_id=object_id, lod_runtime=runtime)
+    expected_keys = content.visible_fact_keys_by_lod[view.current_lod]
+    assert tuple(fact.key for fact in view.visible_facts) == expected_keys
+    assert set(expected_keys).issubset(fact.key for fact in content.facts)
+    assert not ({fact.key for fact in content.facts} - set(expected_keys)).intersection(
+        fact.key for fact in view.visible_facts
+    )
+
+
+@pytest.mark.parametrize("attention,cap,expected", [
+    (0, 3, "goblin/well/lod0"),
+    (1, 3, "goblin/well/lod1"),
+    (3, 3, "goblin/well/lod2"),
+    (6, 3, "goblin/well/lod3"),
+    (6, 1, "goblin/well/lod1"),
+])
+def test_well_visual_asset_key_uses_authoritative_lod_without_mutation(attention, cap, expected):
+    well = WorldObjectId("goblin", "location/well")
+    runtime = LodRuntimeState((ObjectLodProgress(
+        well, ObjectAttentionState(attention), ObjectLodState(cap),
+    ),))
+    before = copy.deepcopy(runtime)
+    assert visual_asset_key_for_object(well, runtime) == expected
+    assert runtime == before
+    assert visual_asset_key_for_object(well, LodRuntimeState()) == "goblin/well/lod0"
+    assert visual_asset_key_for_object(WorldObjectId("goblin", "location/plaza"), runtime) is None
+
+
+@pytest.mark.parametrize("scene", ["shrine", "lookout", "herbhut", "elderhouse"])
+@pytest.mark.parametrize("attention,cap,lod", [
+    (0, 3, 0), (1, 3, 1), (3, 3, 2), (6, 3, 3), (6, 1, 1),
+])
+def test_village_visual_asset_keys_follow_authoritative_lod(scene, attention, cap, lod):
+    object_id = WorldObjectId("goblin", f"location/{scene}")
+    runtime = LodRuntimeState((ObjectLodProgress(
+        object_id, ObjectAttentionState(attention), ObjectLodState(cap),
+    ),))
+    before = copy.deepcopy(runtime)
+    assert visual_asset_key_for_object(object_id, runtime) == f"goblin/{scene}/lod{lod}"
+    assert runtime == before
+    assert visual_asset_key_for_object(object_id, LodRuntimeState()) == f"goblin/{scene}/lod0"
+
+
+def test_well_snapshot_exposes_neutral_spatial_view_without_mutation():
+    import copy
+    from trpg_core.map import build_map
+    from trpg_core.scenario_loader import load_scenario
+    from trpg_core.session import GameState
+    from trpg_core.spatial import PlayerPosition
+
+    state = GameState(7, scenario=load_scenario("goblin"))
+    state.transition_location("well")
+    game_map = build_map(state.scenario, "well")
+    before = (copy.deepcopy(state.snapshot()), state.player_position, state.focus_state)
+    snapshot = build_render_snapshot(state, active_game_map=game_map, lod_runtime=state.lod_runtime)
+    scene = snapshot.spatial_scene
+    assert (scene.width, scene.height) == (7, 5)
+    assert scene.player_position.x == 3 and scene.player_position.y == 3
+    assert len(scene.walkable_cells) == 17
+    assert len(scene.objects) == 1 and scene.objects[0].label == "古井戸"
+    assert [(item.position.x, item.position.y, item.label, item.transition_kind)
+            for item in scene.exits] == [
+        (3, 4, "村の広場", "move"), (3, 0, "物見櫓", "move"),
+    ]
+    assert scene.objects[0].focus_candidate is True
+    assert scene.objects[0].visual_asset_key == "goblin/well/lod0"
+    assert snapshot.player.physical_damage_bonus == 0
+    assert (state.snapshot(), state.player_position, state.focus_state) == before
+
+
+def test_plaza_snapshot_has_current_catalog_spatial_view():
+    from trpg_core.map import build_map
+    from trpg_core.scenario_loader import load_scenario
+    from trpg_core.session import GameState
+    state = GameState(7, scenario=load_scenario("goblin"))
+    assert build_render_snapshot(
+        state, active_game_map=build_map(state.scenario, state.location),
+    ).spatial_scene is not None
+
+
+def test_all_goblin_landmarks_have_distinct_safe_glyphs():
+    from trpg_core.map import build_map
+    from trpg_core.scenario_loader import load_scenario
+    from trpg_core.session import GameState
+    scenario = load_scenario("goblin")
+    glyphs = {}
+    for scene_id in scenario.map_locations:
+        state = GameState(7, scenario=scenario)
+        if scene_id != state.location:
+            definition = state.spatial_definition_for_location(scene_id)
+            source = definition.entry_spawns[0].source_scene_id.local_id.removeprefix(
+                "location/",
+            )
+            state.transition_location(scene_id, source_location=source)
+        scene = build_render_snapshot(
+            state, active_game_map=build_map(scenario, scene_id),
+        ).spatial_scene
+        glyphs[scene_id] = scene.objects[0].glyph
+        assert ":" not in scene.objects[0].glyph
+    assert glyphs == {
+        "plaza": "広", "well": "井", "lookout": "櫓",
+        "herbhut": "薬", "shrine": "祠", "elderhouse": "長",
+        "forest_gate": "門",
+    }

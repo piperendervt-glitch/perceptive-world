@@ -12,8 +12,11 @@ from trpg_core.map import build_map
 from trpg_core.record import RecordingController
 from trpg_core.scenario_loader import load_scenario
 from trpg_core import session
-from trpg_core.input_actions import MetaRequest, parse_raw_input
-from trpg_core.session import ConsoleController, GameState, list_explore_and_pick
+from trpg_core.input_actions import MovePlayerToPositionAction, MetaRequest, parse_raw_input
+from trpg_core.session import (
+    ConsoleController, GameState, _village_context, list_explore_and_pick,
+)
+from trpg_core.spatial import PlayerPosition
 
 
 def _controller(seed=7, scenario_id="goblin"):
@@ -74,6 +77,26 @@ def test_map_number_converts_to_existing_command_and_s_keeps_south():
     assert controller._menu_command(str(south_index), menu) == "go south"
     assert controller._meta_shortcut("S") == "status"
     assert controller._meta_shortcut("s") == "s"
+
+
+def test_line_step_resolves_exact_destination_without_state_change(monkeypatch):
+    state, controller = _controller()
+    state.transition_location("well")
+    game_map = build_map(state.scenario, "well")
+    context = _village_context(state, game_map, [])
+    answers = iter(["STEP EAST", "step east"])
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
+    action = controller.village_action(context, game_map=game_map, picked=())
+    assert action == MovePlayerToPositionAction(PlayerPosition(4, 3))
+    assert state.player_position == PlayerPosition(3, 3)
+
+
+def test_help_distinguishes_go_and_step(capsys):
+    _state, controller = _controller()
+    controller._show_help([])
+    out = capsys.readouterr().out
+    assert "go <方角>" in out and "location間移動" in out
+    assert "step north|east|south|west" in out and "1セル移動" in out
 
 
 def test_combat_menu_filters_state_and_maps_number(capsys):

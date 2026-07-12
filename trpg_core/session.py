@@ -23,12 +23,16 @@ from collections.abc import Collection, Mapping
 
 from .combat import run_combat
 from .input_actions import (
+    ApplyLodUnlockAction,
     ClearFocusAction,
     DepartAction,
     DirectCommand,
     ExploreAction,
+    InspectFocusedObjectAction,
     MetaRequest,
+    MovePlayerToPositionAction,
     MoveToLocationAction,
+    ObserveFocusedObjectAction,
     SelectMenuIndex,
     SetFocusAction,
     VillageInputContext,
@@ -45,13 +49,29 @@ from .scenario_loader import load_scenario
 from .world import (
     FocusState,
     WorldObjectId,
-    build_map_location_world_object_specs,
     clear_focus as resolve_clear_focus,
     focusable_world_object_ids_for_current_location,
     location_world_object_id,
     parse_world_object_id,
     serialize_world_object_id,
     set_focus as resolve_set_focus,
+    world_objects_for_current_scene,
+)
+from .lod import ObjectAttentionState, ObjectLodState
+from .lod_actions import LodRuntimeState, ObjectLodProgress, apply_lod_action
+from .lod_content import lod_content_for_world_object
+from .spatial import PlayerPosition, SceneCell, can_player_occupy
+from .spatial_content import (
+    current_spatial_definition_for_scene,
+    entry_spawn_from_scene,
+    spatial_exit_at_cell,
+)
+from .spatial_actions import apply_player_movement
+from .spatial_input import (
+    canonical_action_for_spatial_step, movement_step_for_line_command,
+)
+from .story_spatial import (
+    current_story_spatial_definition, story_entry_spawn_from_node,
 )
 
 # Windows console default cp932 chokes on CJK output; force UTF-8（resolve.py と同流儀）。
@@ -63,8 +83,8 @@ LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
 RELOAD = "__reload__"
 DEFAULT_SCENARIO = "goblin"
 LEGACY_SAVE_FORMAT_VERSION = 0
-CURRENT_SAVE_FORMAT_VERSION = 1
-SUPPORTED_SAVE_FORMAT_VERSIONS = frozenset({0, 1})
+CURRENT_SAVE_FORMAT_VERSION = 6
+SUPPORTED_SAVE_FORMAT_VERSIONS = frozenset({0, 1, 2, 3, 4, 5, 6})
 
 # 村の地図移動の方角エイリアス（英語/略/日本語）。地図移動は乱数を消費しない（UI のみ）。
 _DIR_ALIAS = {
@@ -82,11 +102,48 @@ _DIR_LABEL = {"north": "北", "east": "東", "south": "南", "west": "西"}
 # ---------------------------------------------------------------------------
 
 class GameState:
-    def __init__(self, seed: int, scenario=None):
+    @property
+    def completed_village_actions(self) -> frozenset[str]:
+        return self._completed_village_actions
+
+    @completed_village_actions.setter
+    def completed_village_actions(self, value: frozenset[str]) -> None:
+        if type(value) is not frozenset:
+            raise ValueError("completed_village_actions must be a frozenset")
+        if not value.issubset(self._valid_village_action_keys):
+            raise ValueError("completed_village_actions contains an unknown key")
+        self._completed_village_actions = value
+
+    @property
+    def player_position(self) -> PlayerPosition | None:
+        return self._player_position
+
+    @player_position.setter
+    def player_position(self, value: PlayerPosition | None) -> None:
+        if value is not None and type(value) is not PlayerPosition:
+            raise ValueError("player_position must be a PlayerPosition or None")
+        self._player_position = value
+
+    @property
+    def lod_runtime(self) -> LodRuntimeState:
+        return self._lod_runtime
+
+    @lod_runtime.setter
+    def lod_runtime(self, value: LodRuntimeState) -> None:
+        if not isinstance(value, LodRuntimeState):
+            raise ValueError("lod_runtime must be a LodRuntimeState")
+        self._lod_runtime = value
+
+    def __init__(
+        self, seed: int, scenario=None, *, player_position=None,
+        spatial_definition_provider=current_spatial_definition_for_scene,
+        story_spatial_definition_provider=current_story_spatial_definition,
+    ):
         # シナリオ（データ）を読む。char/敵/ノードはすべてここから来る。
         if scenario is None:
             scenario = load_scenario(DEFAULT_SCENARIO)
         self.scenario = scenario
+        self._valid_village_action_keys = frozenset(scenario.village_order)
         char = scenario.character
         self.seed = seed
         self.rng = Rng(seed)
@@ -101,15 +158,25 @@ class GameState:
         self.effects: list[dict] = []   # 受動効果（hit_bonus/damage_bonus/recon）の宣言
         self.herbs = 0                  # 回復アイテム（item 効果を畳み込んだ数）
         self.buff_labels: list[str] = []  # 内心表示用のラベル（ログには出ない）
+        self.completed_village_actions: frozenset[str] = frozenset()
         # 進行
         self.turn = 0
         self.node = scenario.start_node
         # 村の現在地（地図の真実源＝GameMap の current をここに永続化。save/load 対象）。
         self.location = scenario.map_start if getattr(scenario, "has_map", False) else None
+        self._spatial_definition_provider = spatial_definition_provider
+        self._story_spatial_definition_provider = story_spatial_definition_provider
+        definition = self.spatial_definition_for_location(self.location)
+        self.player_position = (
+            player_position if player_position is not None
+            else (definition.player_spawn if definition is not None else None)
+        )
         self.started = False
+        self.story_spatial_active = False
         self.respawn_on_defeat = False
         self.log: list[dict] = []
         self.focus_state = FocusState()
+        self.lod_runtime = LodRuntimeState()
         # 表示専用フック（対話プレイでのみ設定）。**ログには一切影響しない**——
         # scripted/policy では None のままなので回帰ログはバイト単位で不変（seed=7 保証）。
         self.presenter = None
@@ -137,16 +204,55 @@ class GameState:
     def clear_focused_object(self) -> None:
         self.focus_state = resolve_clear_focus(self.focus_state)
 
-    def transition_node(self, node: str) -> None:
-        if node == self.node:
+    def transition_node(self, node: str, *, force: bool = False) -> None:
+        if node == self.node and not force:
             return
+        source = self.node
         self.node = node
         self.clear_focused_object()
+        definition = self.story_spatial_definition_for_node(node)
+        if definition is None:
+            self.story_spatial_active = False
+            self.player_position = None
+            return
+        self.story_spatial_active = True
+        source_node = self.scenario.node(source)
+        if source != node and source_node.kind == "decision":
+            position = story_entry_spawn_from_node(definition, source)
+            if position is None:
+                raise ValueError("destination has no story entry spawn for source node")
+            self.player_position = position
+        else:
+            self.player_position = definition.player_spawn
 
-    def transition_location(self, location: str | None) -> None:
+    def story_spatial_definition_for_node(self, node: str | None):
+        if node is None:
+            return None
+        return self._story_spatial_definition_provider(self.scenario.id, node)
+
+    def spatial_definition_for_location(self, location: str | None):
+        if location is None:
+            return None
+        return self._spatial_definition_provider(self.scenario.id, location)
+
+    def transition_location(
+        self, location: str | None, *, source_location: str | None = None,
+    ) -> None:
         if location == self.location:
             return
+        self.story_spatial_active = False
+        definition = self.spatial_definition_for_location(location)
+        source = self.location if source_location is None else source_location
+        position = definition.player_spawn if definition is not None else None
+        if definition is not None and source is not None:
+            source_definition = self.spatial_definition_for_location(source)
+            if source_definition is not None and definition.entry_spawns:
+                source_id = location_world_object_id(self.scenario.id, source)
+                position = entry_spawn_from_scene(definition, source_id)
+                if position is None:
+                    raise ValueError("destination has no entry spawn for source scene")
         self.location = location
+        self.player_position = position
         self.clear_focused_object()
 
     def reset_for_village(self) -> None:
@@ -158,6 +264,7 @@ class GameState:
         self.effects = []
         self.herbs = 0
         self.buff_labels = []
+        self.completed_village_actions = frozenset()
         # 敗北後は村の入口（広場）から歩き直す
         self.transition_location(
             self.scenario.map_start if getattr(self.scenario, "has_map", False) else None
@@ -204,14 +311,150 @@ def make_save_document(state: GameState) -> dict:
     document["focused_object_id"] = (
         serialize_world_object_id(focused) if focused is not None else None
     )
+    document["lod_runtime"] = [
+        {
+            "object_id": serialize_world_object_id(progress.object_id),
+            "attention_level": progress.attention.attention_level,
+            "unlocked_lod_cap": progress.lod_state.unlocked_lod_cap,
+        }
+        for progress in state.lod_runtime.objects
+    ]
+    position = state.player_position
+    document["player_position"] = (
+        {"x": position.x, "y": position.y} if position is not None else None
+    )
+    document["story_spatial_active"] = bool(state.story_spatial_active)
+    document["completed_village_actions"] = sorted(state.completed_village_actions)
     return document
+
+
+_LEGACY_COMPLETION_LABELS = {
+    "古い祠に祈る": "shrine",
+    "森を偵察する": "scout",
+    "薬草の女を訪ねる": "herbs",
+    "村長に詳しく聞く": "elder",
+    "井戸を調べる": "well",
+}
+
+
+def _decode_completed_village_actions(document, version, valid_keys) -> frozenset[str]:
+    if version >= 6:
+        raw = document.get("completed_village_actions")
+        if type(raw) is not list:
+            raise ValueError("completed_village_actions must be an array")
+        if any(type(key) is not str or key not in valid_keys for key in raw):
+            raise ValueError("unknown completed village action")
+        if len(raw) != len(set(raw)):
+            raise ValueError("completed_village_actions must not contain duplicates")
+        return frozenset(raw)
+    if "completed_village_actions" in document:
+        raise ValueError("legacy save cannot contain completed_village_actions")
+    labels = document.get("buff_labels", [])
+    completed = set()
+    for effect in document.get("effects", []):
+        if not isinstance(effect, Mapping):
+            continue
+        if effect.get("type") == "recon":
+            completed.add("scout")
+        elif (effect.get("type") == "hit_bonus"
+              and effect.get("target_enemy") == "chief"
+              and effect.get("value") == 2):
+            completed.add("elder")
+        elif (effect.get("type") == "hit_bonus"
+              and effect.get("target_enemy") is None
+              and effect.get("value") == 1):
+            completed.add("shrine")
+        elif (effect.get("type") == "damage_bonus"
+              and effect.get("kind") == "physical"):
+            completed.add("well")
+    for label in labels:
+        key = _LEGACY_COMPLETION_LABELS.get(label)
+        if key is not None:
+            completed.add(key)
+    return frozenset(completed)
+
+
+def _decode_lod_runtime(document, version):
+    if version < 2:
+        if "lod_runtime" in document:
+            raise ValueError("legacy save cannot contain lod_runtime")
+        return LodRuntimeState()
+    raw = document.get("lod_runtime")
+    if type(raw) is not list:
+        raise ValueError("lod_runtime must be an array")
+    entries = []
+    for item in raw:
+        if type(item) is not dict or set(item) != {
+            "object_id", "attention_level", "unlocked_lod_cap",
+        }:
+            raise ValueError("invalid lod_runtime entry")
+        object_id = parse_world_object_id(item["object_id"])
+        content = lod_content_for_world_object(object_id)
+        if content is None:
+            raise ValueError("LOD runtime object has no content")
+        attention = item["attention_level"]
+        cap = item["unlocked_lod_cap"]
+        if type(attention) is not int or attention < 0:
+            raise ValueError("attention_level must be a non-negative int")
+        if type(cap) is not int or cap < 0 or cap > content.lod_spec.max_lod:
+            raise ValueError("unlocked_lod_cap is outside content range")
+        entries.append(ObjectLodProgress(
+            object_id, ObjectAttentionState(attention), ObjectLodState(cap),
+        ))
+    return LodRuntimeState(tuple(entries))
+
+
+def _decode_player_position(document, version, location, scenario_id, node, story_active):
+    definition = current_spatial_definition_for_scene(scenario_id, location)
+    story_definition = current_story_spatial_definition(scenario_id, node)
+    if story_definition is not None and version >= 5 and story_active:
+        definition = story_definition
+    if version < 3:
+        if "player_position" in document:
+            raise ValueError("legacy save cannot contain player_position")
+        return definition.player_spawn if definition is not None else None
+    if "player_position" not in document:
+        raise ValueError("player_position is required for save format version 3")
+    raw = document["player_position"]
+    if raw is None:
+        if version < 4:
+            return definition.player_spawn if definition is not None else None
+        if definition is not None:
+            raise ValueError("catalog scene requires player_position")
+        return None
+    if type(raw) is not dict or set(raw) != {"x", "y"}:
+        raise ValueError("player_position must contain exactly x and y")
+    position = PlayerPosition(raw["x"], raw["y"])
+    if definition is None:
+        raise ValueError("player_position requires a spatial definition")
+    if not can_player_occupy(definition.spec, position):
+        raise ValueError("player_position is not occupiable")
+    if story_definition is not None and version >= 5 and story_active:
+        from .story_spatial import story_trigger_at_cell
+        if story_trigger_at_cell(story_definition, SceneCell(position.x, position.y)) is not None:
+            raise ValueError("player_position must not occupy a story trigger cell")
+    elif spatial_exit_at_cell(definition, SceneCell(position.x, position.y)) is not None:
+        raise ValueError("player_position must not occupy an exit cell")
+    return position
 
 
 def _validated_save_state(document, scenario):
     """Validate into an isolated state and return it plus validated focus."""
     version = parse_save_format_version(document)
+    lod_runtime = _decode_lod_runtime(document, version)
+    completed_actions = _decode_completed_village_actions(
+        document, version, frozenset(scenario.village_order),
+    )
     if document.get("scenario_id") != scenario.id:
         raise ValueError("save scenario_id does not match the active scenario")
+    if version >= 6 and scenario.id == "goblin":
+        label_actions = frozenset(
+            _LEGACY_COMPLETION_LABELS[label]
+            for label in document.get("buff_labels", [])
+            if label in _LEGACY_COMPLETION_LABELS
+        )
+        if label_actions != completed_actions:
+            raise ValueError("completed village actions contradict buff labels")
     for field in GameState._SNAP_FIELDS + ("scenario_id", "rng_a"):
         if field not in document:
             raise ValueError(f"save field is missing: {field}")
@@ -236,11 +479,23 @@ def _validated_save_state(document, scenario):
         raise ValueError("rng_a must be a 32-bit unsigned integer")
     if document["node"] not in scenario.nodes:
         raise ValueError("saved node does not exist")
+    if version < 5:
+        if "story_spatial_active" in document:
+            raise ValueError("legacy save cannot contain story_spatial_active")
+        story_active = False
+    else:
+        story_active = document.get("story_spatial_active")
+        if type(story_active) is not bool:
+            raise ValueError("story_spatial_active must be a bool")
     if scenario.has_map:
         if document["location"] not in scenario.map_locations:
             raise ValueError("saved location does not exist")
     elif document["location"] is not None:
         raise ValueError("mapless scenario cannot restore a location")
+    player_position = _decode_player_position(
+        document, version, document["location"], scenario.id, document["node"],
+        story_active,
+    )
 
     if version == 0:
         if "focused_object_id" in document:
@@ -257,14 +512,17 @@ def _validated_save_state(document, scenario):
 
     candidate = GameState(document["seed"], scenario=scenario)
     candidate.restore(dict(document))
+    candidate.story_spatial_active = story_active
+    candidate.player_position = player_position
+    candidate.lod_runtime = lod_runtime
+    candidate.completed_village_actions = completed_actions
     if focused is not None:
         if not scenario.has_map:
             raise ValueError("focused_object_id requires an active map")
         from .map import build_map
         game_map = build_map(scenario, candidate.location)
-        specs = build_map_location_world_object_specs(scenario.id, game_map)
         focusable = focusable_world_object_ids_for_current_location(
-            scenario.id, game_map, specs,
+            scenario.id, game_map,
         )
         candidate.set_focused_object(focused, focusable_object_ids=focusable)
     else:
@@ -281,6 +539,8 @@ class ScriptedController:
 
     def __init__(self, explores, node_choices, combat_cmds):
         self.legacy_village_batch = True
+        self.well_effect_profile = "legacy"
+        self.village_effect_profile = "legacy_all"
         self._explores = list(explores)
         self._village_events = deque()
         self._choices = deque(node_choices)   # ノード選択（遭遇順）
@@ -345,32 +605,32 @@ class PolicyController:
 
 def _goto(state: GameState, node_id: str) -> None:
     """遷移先へ移り、enter_node を刻む（ノード進入はすべてここを通す）。"""
-    state.transition_node(node_id)
+    state.transition_node(node_id, force=True)
     state.emit(type="enter_node", node=node_id)
 
 
-def _village_context(state, game_map, picked) -> VillageInputContext:
+def _village_context(state, game_map, picked=()) -> VillageInputContext:
     sc = state.scenario
+    completed = state.completed_village_actions
     if game_map is None:
         focusable = ()
         moves = ()
         current_id = None
         current_explore = None
-        explore_keys = tuple(k for k in sc.village_order if k not in picked)
-        can_depart = len(picked) >= sc.village_pick_count
+        explore_keys = tuple(k for k in sc.village_order if k not in completed)
+        can_depart = len(completed) >= sc.village_pick_count
     else:
-        specs = build_map_location_world_object_specs(sc.id, game_map)
-        focusable = focusable_world_object_ids_for_current_location(sc.id, game_map, specs)
+        focusable = focusable_world_object_ids_for_current_location(sc.id, game_map)
         current_id = location_world_object_id(sc.id, game_map.current)
         moves = tuple(
             (direction, location_world_object_id(sc.id, destination))
             for direction, destination in game_map.exits().items()
         )
         key = game_map.here().action
-        current_explore = key if key and key not in picked else None
+        current_explore = key if key and key not in completed else None
         explore_keys = (current_explore,) if current_explore is not None else ()
         can_depart = (game_map.here().leads_to_adventure
-                      and len(picked) >= sc.village_pick_count)
+                      and len(completed) >= sc.village_pick_count)
     return VillageInputContext(
         scenario_id=sc.id,
         current_location_object_id=current_id,
@@ -383,7 +643,103 @@ def _village_context(state, game_map, picked) -> VillageInputContext:
     )
 
 
-def _apply_village_action(state, game_map, picked, action, *, legacy_batch=False) -> bool:
+def _current_well_lod(state) -> int:
+    from .lod import derive_current_lod
+    from .lod_actions import initial_lod_progress, lod_progress_for_world_object
+    from .lod_content import lod_content_for_world_object
+    object_id = WorldObjectId("goblin", "location/well")
+    content = lod_content_for_world_object(object_id)
+    progress = lod_progress_for_world_object(state.lod_runtime, object_id)
+    if progress is None:
+        progress = initial_lod_progress(content)
+    return derive_current_lod(content.lod_spec, progress.attention, progress.lod_state)
+
+
+def _current_object_lod(state, object_id: WorldObjectId) -> int:
+    from .lod import derive_current_lod
+    from .lod_actions import initial_lod_progress, lod_progress_for_world_object
+    content = lod_content_for_world_object(object_id)
+    if content is None:
+        raise ValueError("village effect object has no LOD content")
+    progress = lod_progress_for_world_object(state.lod_runtime, object_id)
+    if progress is None:
+        progress = initial_lod_progress(content)
+    return derive_current_lod(content.lod_spec, progress.attention, progress.lod_state)
+
+
+def _village_lod_explore_result(state, action_key, profile):
+    from .village_lod_effects import village_effect_for_lod, village_lod_effect_spec
+    locations = {
+        "shrine": "shrine", "scout": "lookout",
+        "herbs": "herbhut", "elder": "elderhouse",
+    }
+    object_id = WorldObjectId("goblin", f"location/{locations[action_key]}")
+    spec = village_lod_effect_spec(object_id, action_key)
+    if profile not in {"legacy_all", "well_current", "all_current"}:
+        raise ValueError("unknown village effect profile")
+    legacy = profile != "all_current"
+    lod = _current_object_lod(state, object_id)
+    delta = village_effect_for_lod(object_id, action_key, lod, legacy=legacy)
+    effects = []
+    if delta.global_hit_bonus:
+        effects.append({"type": "hit_bonus", "value": delta.global_hit_bonus})
+    if delta.watcher_hit_bonus:
+        effects.append({"type": "hit_bonus", "target_enemy": "sentry", "value": delta.watcher_hit_bonus})
+    if delta.chief_hit_bonus:
+        effects.append({"type": "hit_bonus", "target_enemy": "chief", "value": delta.chief_hit_bonus})
+    if delta.herbs_delta:
+        effects.append({"type": "item", "item": "herb", "count": delta.herbs_delta})
+    if delta.grants_recon:
+        effects.append({"type": "recon"})
+    if legacy:
+        return tuple(effects), None
+    gains = {
+        "shrine": (
+            "古い祠で祈り、準備を整えた。追加の加護は得られなかった。",
+            "古い祠の加護を得た。頭目への命中補正 +1",
+            "古い祠の加護を得た。全命中補正 +1",
+            "古い祠の強い加護を得た。全命中補正 +2",
+        ),
+        "scout": (
+            "物見櫓から周囲を確かめ、準備を整えた。追加効果は得られなかった。",
+            "物見櫓から見張りの動きを読んだ。見張りへの命中補正 +1",
+            "物見櫓から偵察効果を獲得した。",
+            "物見櫓から偵察効果を獲得した。頭目への命中補正 +1",
+        ),
+        "herbs": (
+            "薬草小屋を訪ね、準備を整えた。薬草は入手できなかった。",
+            "薬草を1個入手した。", "薬草を2個入手した。", "薬草を3個入手した。",
+        ),
+        "elder": (
+            "村長から情報を聞き、準備を整えた。追加支援は得られなかった。",
+            "村長から支援を得た。頭目への命中補正 +1",
+            "村長から支援を得た。頭目への命中補正 +2",
+            "村長から強い支援を得た。頭目への命中補正 +3",
+        ),
+    }
+    return tuple(effects), gains[action_key][lod]
+
+
+def _well_explore_result(state, profile):
+    if profile == "legacy":
+        return None, None
+    if profile != "current":
+        raise ValueError("unknown well effect profile")
+    from .well_effects import well_physical_damage_bonus_for_lod
+    bonus = well_physical_damage_bonus_for_lod(_current_well_lod(state))
+    effect = {"type": "damage_bonus", "kind": "physical", "value": bonus}
+    gains = {
+        0: "古井戸を調べたが、役立つものは見つからなかった。物理ダメージ補正は変化しない。",
+        1: "錆びた短剣：物理ダメージ +1",
+        2: "錆びた短剣：物理ダメージ +2",
+        3: "状態のよい錆びた短剣：物理ダメージ +3",
+    }
+    return effect, gains[bonus]
+
+
+def _apply_village_action(state, game_map, picked, action, *, legacy_batch=False,
+                          well_effect_profile="current",
+                          village_effect_profile="all_current") -> bool:
     """Validate and apply one canonical event. Return True only for depart."""
     from . import village
     context = _village_context(state, game_map, picked)
@@ -395,6 +751,26 @@ def _apply_village_action(state, game_map, picked, action, *, legacy_batch=False
         return False
     if isinstance(action, ClearFocusAction):
         state.clear_focused_object()
+        return False
+    if isinstance(action, (
+        ObserveFocusedObjectAction, InspectFocusedObjectAction, ApplyLodUnlockAction,
+    )):
+        scene_object_ids = tuple(
+            item.spec.object_id
+            for item in world_objects_for_current_scene(
+                scenario_id=state.scenario.id, game_map=game_map,
+            )
+        )
+        state.lod_runtime = apply_lod_action(
+            state.lod_runtime,
+            action,
+            focused_object_id=context.focused_object_id,
+            focusable_object_ids=context.focusable_object_ids,
+            scene_object_ids=scene_object_ids,
+        )
+        return False
+    if isinstance(action, MovePlayerToPositionAction):
+        apply_player_movement(state, action)
         return False
     if isinstance(action, MoveToLocationAction):
         if game_map is None:
@@ -410,22 +786,43 @@ def _apply_village_action(state, game_map, picked, action, *, legacy_batch=False
             raise ValueError("move destination does not exist")
         if destination not in game_map.exits().values():
             raise ValueError("move destination is unreachable")
+        source = game_map.current
+        destination_definition = state.spatial_definition_for_location(destination)
+        if destination_definition is not None:
+            source_definition = state.spatial_definition_for_location(source)
+            if source_definition is not None and destination_definition.entry_spawns:
+                source_id = location_world_object_id(state.scenario.id, source)
+                if entry_spawn_from_scene(destination_definition, source_id) is None:
+                    raise ValueError("destination has no entry spawn for source scene")
+        state.transition_location(destination, source_location=source)
         game_map.current = destination
-        state.transition_location(destination)
         return False
     if isinstance(action, ExploreAction):
-        available = (tuple(k for k in state.scenario.village_order if k not in picked)
+        completed = state.completed_village_actions
+        available = (tuple(k for k in state.scenario.village_order if k not in completed)
                      if legacy_batch else context.explore_keys)
         if action.key not in available:
             raise ValueError("explore key is not currently available")
-        village.explore(state, action.key)
-        picked.append(action.key)
+        effect = gain = None
+        if state.scenario.id == "goblin" and action.key == "well":
+            effect, gain = _well_explore_result(state, well_effect_profile)
+        elif state.scenario.id == "goblin" and action.key in {"shrine", "scout", "herbs", "elder"}:
+            effect, gain = _village_lod_explore_result(
+                state, action.key, village_effect_profile,
+            )
+        village.explore(state, action.key, effect_override=effect, gain_override=gain)
+        state.completed_village_actions = state.completed_village_actions | {action.key}
         return False
     if isinstance(action, DepartAction):
-        if legacy_batch and len(picked) >= state.scenario.village_pick_count:
+        if (legacy_batch
+                and len(state.completed_village_actions) >= state.scenario.village_pick_count):
+            state.player_position = None
+            state.clear_focused_object()
             return True
         if not context.can_depart:
             raise ValueError("cannot depart from the current village state")
+        state.player_position = None
+        state.clear_focused_object()
         return True
     raise ValueError(f"unsupported village action: {action!r}")
 
@@ -437,7 +834,7 @@ def _run_village(state: GameState, controller, *, on_village_event_applied=None)
     game_map = build_map(sc, state.location or sc.map_start) if sc.has_map else None
     if game_map is not None and state.location is None:
         state.transition_location(game_map.current)
-    picked = []
+    picked = list(state.completed_village_actions)
     if hasattr(controller, "begin_village"):
         controller.begin_village()
     while True:
@@ -448,9 +845,25 @@ def _run_village(state: GameState, controller, *, on_village_event_applied=None)
         if action == RELOAD:
             game_map = build_map(sc, state.location or sc.map_start) if sc.has_map else None
             continue
-        departed = _apply_village_action(
-                state, game_map, picked, action,
-                legacy_batch=bool(getattr(controller, "legacy_village_batch", False)))
+        try:
+            departed = _apply_village_action(
+                    state, game_map, picked, action,
+                    legacy_batch=bool(getattr(controller, "legacy_village_batch", False)),
+                    well_effect_profile=getattr(controller, "well_effect_profile", "current"),
+                    village_effect_profile=getattr(
+                        controller, "village_effect_profile", "all_current",
+                    ))
+        except ValueError as exc:
+            if hasattr(controller, "village_event_rejected"):
+                controller.village_event_rejected(action, exc)
+                continue
+            if hasattr(controller, "announce"):
+                controller.announce(str(exc))
+                continue
+            raise
+        if hasattr(controller, "village_event_applied"):
+            controller.village_event_applied(action)
+        picked[:] = sorted(state.completed_village_actions)
         if on_village_event_applied is not None:
             on_village_event_applied(action, state.focus_state.focused_object_id)
         if departed:
@@ -474,9 +887,23 @@ def _resolve_check(state: GameState, check: dict) -> bool:
     return rr["success"]
 
 
-def _handle_decision(state: GameState, controller, node) -> str | None:
+def _handle_decision(state: GameState, controller, node, *, on_action_applied=None) -> str | None:
     """決定ノードを 1 手進める。RELOAD ならそれを返し、それ以外は None。"""
-    key = controller.choice(node.id, [c.key for c in node.choices])
+    if hasattr(controller, "story_action") and state.story_spatial_active:
+        while True:
+            action = controller.story_action(state, node)
+            if isinstance(action, MovePlayerToPositionAction):
+                apply_player_movement(state, action)
+                if on_action_applied is not None:
+                    on_action_applied(action, state.focus_state.focused_object_id)
+                continue
+            from .input_actions import StoryChoiceAction
+            if not isinstance(action, StoryChoiceAction):
+                raise ValueError("story controller returned an unsupported action")
+            key = action.key
+            break
+    else:
+        key = controller.choice(node.id, [c.key for c in node.choices])
     if key == RELOAD:
         return RELOAD
     state.turn += 1
@@ -488,6 +915,8 @@ def _handle_decision(state: GameState, controller, node) -> str | None:
     else:
         dest = choice.next
     _goto(state, dest)
+    if on_action_applied is not None and 'action' in locals():
+        on_action_applied(action, state.focus_state.focused_object_id)
     return None
 
 
@@ -547,7 +976,10 @@ def run_session(state: GameState, controller, *, on_village_event_applied=None) 
     while True:
         node = sc.node(state.node)
         if node.kind == "decision":
-            if _handle_decision(state, controller, node) == RELOAD:
+            if _handle_decision(
+                state, controller, node,
+                on_action_applied=on_village_event_applied,
+            ) == RELOAD:
                 continue
         elif node.kind == "combat":
             res = _handle_combat(
@@ -686,6 +1118,7 @@ class ConsoleController:
         )
         model = screen_model_from_snapshot(build_render_snapshot(
             self.state, context, active_game_map=game_map,
+            lod_runtime=self.state.lod_runtime,
         ))
         return self.tui.draw(model)
 
@@ -716,7 +1149,8 @@ class ConsoleController:
             lines.append("load <名前> — 保存した状態を読込（例: load camp）")
         else:
             lines.append("load は戦闘外で使用する。")
-        lines.append("地図では go <方角> または方角単独も使用できる。")
+        lines.append("go <方角> — location間移動")
+        lines.append("step north|east|south|west — 現在scene内の1セル移動")
         return lines
 
     def _show_help(self, menu, include_load=True):
@@ -921,6 +1355,29 @@ class ConsoleController:
                 self._message("中断する."); sys.exit(0)
             if meta == "handled":
                 continue
+            step = movement_step_for_line_command(original)
+            if step is not None:
+                if self.state.player_position is None:
+                    self._message("current scene has no player position")
+                    continue
+                definition = self.state.spatial_definition_for_location(
+                    self.state.location,
+                )
+                if definition is None or self.state.location is None:
+                    self._message("current scene has no spatial definition")
+                    continue
+                return canonical_action_for_spatial_step(
+                    current_scene_id=location_world_object_id(
+                        self.state.scenario.id, self.state.location,
+                    ),
+                    current_position=self.state.player_position,
+                    step=step,
+                    definition=definition,
+                )
+            if low == "observe":
+                return ObserveFocusedObjectAction()
+            if low == "inspect":
+                return InspectFocusedObjectAction()
             try:
                 focus = resolve_focus_command(
                     low,
@@ -1193,16 +1650,16 @@ class ConsoleController:
             self._message(f"[ロード失敗] {exc}")
             return False
         self.state.restore(candidate.snapshot())
+        self.state.player_position = candidate.player_position
+        self.state.lod_runtime = candidate.lod_runtime
+        self.state.completed_village_actions = candidate.completed_village_actions
         if focused is None:
             self.state.clear_focused_object()
         else:
             from .map import build_map
             game_map = build_map(self.state.scenario, self.state.location)
-            specs = build_map_location_world_object_specs(
-                self.state.scenario.id, game_map,
-            )
             focusable = focusable_world_object_ids_for_current_location(
-                self.state.scenario.id, game_map, specs,
+                self.state.scenario.id, game_map,
             )
             self.state.set_focused_object(focused, focusable_object_ids=focusable)
         self._message(f"[ロード] {path}（rng 状態も復元）")
@@ -1382,7 +1839,7 @@ def main(argv):
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--scenario", default=DEFAULT_SCENARIO,
                     help="scenarios/<id>.yaml を選ぶ（既定: goblin）")
-    ap.add_argument("--ui", choices=("menu", "tui"), default="menu",
+    ap.add_argument("--ui", choices=("menu", "tui", "2d"), default="menu",
                     help="対話UI（既定: menu）")
     ap.add_argument("--replay", action="store_true", help="seed=7 の参照入力列を自動再生してログ出力")
     args = ap.parse_args(argv)
@@ -1396,7 +1853,11 @@ def main(argv):
               f"（{len(state.log)} events, ending={state.log[-1].get('result')}）")
         return 0
 
-    play_interactive(args.seed, scenario_id=args.scenario, ui_mode=args.ui)
+    if args.ui == "2d":
+        from .two_d import run_two_d_session
+        run_two_d_session(args.seed, args.scenario)
+    else:
+        play_interactive(args.seed, scenario_id=args.scenario, ui_mode=args.ui)
     return 0
 
 

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Literal, TypeAlias, cast
 
 from .world import WorldObjectId
+from .spatial import PlayerPosition
 
 MetaCommand: TypeAlias = Literal["status", "help", "save", "load", "quit"]
 MoveDirection: TypeAlias = Literal["north", "east", "south", "west"]
@@ -82,6 +83,27 @@ class MoveToLocationAction:
 
 
 @dataclass(frozen=True)
+class MovePlayerToPositionAction:
+    destination: PlayerPosition
+
+    def __post_init__(self) -> None:
+        if type(self.destination) is not PlayerPosition:
+            raise ValueError("destination must be a PlayerPosition")
+
+
+@dataclass(frozen=True)
+class StoryChoiceAction:
+    key: str
+
+    def __post_init__(self) -> None:
+        if type(self.key) is not str or not self.key or self.key != self.key.strip():
+            raise ValueError("story choice key must be non-empty exact text")
+
+
+SpatialCanonicalAction: TypeAlias = MovePlayerToPositionAction
+
+
+@dataclass(frozen=True)
 class ExploreAction:
     key: str
 
@@ -101,9 +123,38 @@ class ClearFocusAction:
     pass
 
 
+@dataclass(frozen=True)
+class ObserveFocusedObjectAction:
+    pass
+
+
+@dataclass(frozen=True)
+class InspectFocusedObjectAction:
+    pass
+
+
+@dataclass(frozen=True)
+class ApplyLodUnlockAction:
+    object_id: WorldObjectId
+    target_cap: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.object_id, WorldObjectId):
+            raise ValueError("object_id must be a WorldObjectId")
+        if type(self.target_cap) is not int or self.target_cap < 0:
+            raise ValueError("target_cap must be a non-negative int")
+
+
+LodCanonicalAction: TypeAlias = (
+    ObserveFocusedObjectAction | InspectFocusedObjectAction
+    | ApplyLodUnlockAction
+)
+
+
 VillageControllerEvent: TypeAlias = (
-    MoveToLocationAction | ExploreAction | DepartAction
+    MoveToLocationAction | MovePlayerToPositionAction | ExploreAction | DepartAction
     | SetFocusAction | ClearFocusAction
+    | LodCanonicalAction
 )
 
 

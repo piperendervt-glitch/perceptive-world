@@ -16,6 +16,8 @@ import json
 import os
 import sys
 
+import pytest
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
@@ -76,7 +78,7 @@ def test_all_fixtures_replay_state():
 
 def test_record_replay_roundtrip():
     for name, fx in _all_fixtures():
-        if fx.get("format_version") == 1:
+        if fx.get("format_version", 0) in {0, 1, 2, 3, 4, 5, 6, 7}:
             ok, actual, diff = replay_fixture(fx, mode="full")
             assert ok and actual == fx["expected_log"], f"{name}: v1 replay不一致 -> {diff}"
             continue
@@ -90,12 +92,27 @@ def test_record_replay_roundtrip():
 
 def test_protected_envoy_fixture_remains_legacy_v0():
     path = os.path.join(FIXTURE_DIR, "envoy_play.json")
+    if not os.path.isfile(path):
+        pytest.skip("protected legacy envoy fixture is not included in clean checkouts")
     fx = load_fixture(path)
     assert "format_version" not in fx
     assert len(fx["inputs"]) == 4
     assert len(fx["expected_log"]) == 10
     ok, actual, diff = replay_fixture(fx, mode="full")
     assert ok and actual == fx["expected_log"], diff
+
+
+@pytest.mark.parametrize("name", [
+    "village_lod_effects_play_v7.json",
+    "village_lod_effects_alt_play_v7.json",
+])
+def test_village_lod_v7_fixtures_are_current_and_deterministic(name):
+    fx = load_fixture(os.path.join(FIXTURE_DIR, name))
+    assert fx["format_version"] == 7
+    first = replay_fixture(fx, mode="full")
+    second = replay_fixture(fx, mode="full")
+    assert first[0] and second[0]
+    assert first[1] == second[1] == fx["expected_log"]
 
 
 def test_focus_v1_fixture_is_canonical_and_has_focus_expectation():
@@ -108,6 +125,72 @@ def test_focus_v1_fixture_is_canonical_and_has_focus_expectation():
                for token in fx["inputs"])
     ok, actual, diff = replay_fixture(fx, mode="full")
     assert ok and actual == fx["expected_log"], diff
+
+
+def test_lod_v2_fixture_reaches_final_lod_with_canonical_traces():
+    fx = load_fixture(os.path.join(FIXTURE_DIR, "lod_play_v2.json"))
+    assert fx["format_version"] == 2
+    assert fx["inputs"].count("observe") == 2
+    assert fx["inputs"].count("inspect") == 2
+    assert fx["expected_focus_trace"] == ["goblin:location/well"]
+    assert fx["expected_lod_trace"][-1] == [{
+        "object_id": "goblin:location/well",
+        "attention_level": 6,
+        "unlocked_lod_cap": 3,
+        "current_lod": 3,
+    }]
+    first = replay_fixture(fx, mode="full")
+    second = replay_fixture(fx, mode="full")
+    assert first == second
+    assert first[0] and first[1] == fx["expected_log"]
+
+
+def test_spatial_v3_fixture_replays_twice_with_position_trace():
+    fx = load_fixture(os.path.join(FIXTURE_DIR, "spatial_play_v3.json"))
+    assert fx["format_version"] == 3
+    assert fx["inputs"].count("move-player-to:2,2") == 1
+    assert fx["expected_position_trace"][0] == {"x": 1, "y": 2}
+    assert fx["expected_position_trace"][-1] is None
+    assert len(fx["expected_position_trace"]) == len(fx["expected_lod_trace"])
+    first = replay_fixture(fx, mode="full")
+    second = replay_fixture(fx, mode="full")
+    assert first == second
+    assert first[0] and first[1] == fx["expected_log"]
+
+
+def test_scene_spatial_v4_fixture_uses_catalog_entry_position_and_replays_twice():
+    fx = load_fixture(os.path.join(FIXTURE_DIR, "scene_spatial_play_v4.json"))
+    assert fx["format_version"] == 4
+    assert fx["inputs"][:2] == [
+        "move-player-to:3,1", "move-to:goblin:location/well",
+    ]
+    assert fx["expected_position_trace"][:2] == [
+        {"x": 3, "y": 1}, {"x": 3, "y": 3},
+    ]
+    first = replay_fixture(fx, mode="full")
+    second = replay_fixture(fx, mode="full")
+    assert first == second
+    assert first[0] and first[1] == fx["expected_log"]
+
+
+def test_story_spatial_v5_fixture_replays_twice():
+    fx = load_fixture(os.path.join(FIXTURE_DIR, "story_spatial_play_v5.json"))
+    assert fx["format_version"] == 5
+    first = replay_fixture(fx, mode="full")
+    second = replay_fixture(fx, mode="full")
+    assert first == second
+    assert first[0] and first[1] == fx["expected_log"]
+
+
+def test_well_effect_v6_fixture_uses_plus_three_and_replays_twice():
+    fx = load_fixture(os.path.join(FIXTURE_DIR, "well_effect_play_v6.json"))
+    assert fx["format_version"] == 6
+    assert "explore:well" in fx["inputs"]
+    well_event = next(e for e in fx["expected_log"] if e.get("type") == "explore" and e.get("place") == "well")
+    assert well_event["gain"].endswith("+3")
+    first = replay_fixture(fx, mode="full")
+    second = replay_fixture(fx, mode="full")
+    assert first == second and first[0]
 
 
 # ---------------------------------------------------------------------------

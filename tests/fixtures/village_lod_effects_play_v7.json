@@ -1,0 +1,1064 @@
+{
+ "format_version": 7,
+ "scenario": "goblin",
+ "seed": 7,
+ "inputs": [
+  "move-to:goblin:location/well",
+  "move-to:goblin:location/lookout",
+  "focus:set:goblin:location/lookout",
+  "observe",
+  "inspect",
+  "inspect",
+  "observe",
+  "explore:scout",
+  "move-to:goblin:location/well",
+  "move-to:goblin:location/plaza",
+  "move-to:goblin:location/herbhut",
+  "focus:set:goblin:location/herbhut",
+  "observe",
+  "explore:herbs",
+  "move-to:goblin:location/plaza",
+  "move-to:goblin:location/shrine",
+  "focus:set:goblin:location/shrine",
+  "observe",
+  "inspect",
+  "explore:shrine",
+  "move-to:goblin:location/plaza",
+  "move-to:goblin:location/elderhouse",
+  "move-to:goblin:location/forest_gate",
+  "depart",
+  "choice:road",
+  "combat:attack",
+  "choice:front",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack"
+ ],
+ "expected_log": [
+  {
+   "t": 0,
+   "type": "session_start",
+   "seed": 7
+  },
+  {
+   "t": 0,
+   "type": "explore",
+   "place": "scout",
+   "gain": "物見櫓から偵察効果を獲得した。頭目への命中補正 +1"
+  },
+  {
+   "t": 0,
+   "type": "explore",
+   "place": "herbs",
+   "gain": "薬草を1個入手した。"
+  },
+  {
+   "t": 0,
+   "type": "explore",
+   "place": "shrine",
+   "gain": "古い祠の加護を得た。全命中補正 +1"
+  },
+  {
+   "t": 1,
+   "type": "enter_node",
+   "node": "forest"
+  },
+  {
+   "t": 2,
+   "type": "choice",
+   "node": "forest",
+   "label": "街道を行く"
+  },
+  {
+   "t": 2,
+   "type": "enter_node",
+   "node": "cave_entrance"
+  },
+  {
+   "t": 2,
+   "type": "encounter",
+   "node": "cave_entrance",
+   "enemies": [
+    "sentry"
+   ]
+  },
+  {
+   "t": 4,
+   "type": "check",
+   "tag": "free_hit",
+   "auto": true,
+   "success": true
+  },
+  {
+   "t": 4,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "sentry",
+   "damage": 5,
+   "crit": false,
+   "enemy_hp": 0
+  },
+  {
+   "t": 4,
+   "type": "combat_win",
+   "node": "cave_entrance"
+  },
+  {
+   "t": 4,
+   "type": "enter_node",
+   "node": "cave_hall"
+  },
+  {
+   "t": 5,
+   "type": "choice",
+   "node": "cave_hall",
+   "label": "正面から進む"
+  },
+  {
+   "t": 5,
+   "type": "enter_node",
+   "node": "hall2"
+  },
+  {
+   "t": 5,
+   "type": "encounter",
+   "node": "hall2",
+   "enemies": [
+    "goblin",
+    "goblin"
+   ]
+  },
+  {
+   "t": 6,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    4,
+    3
+   ],
+   "sum": 7,
+   "modifier": 1,
+   "total": 8,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 6,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "goblin",
+   "damage": 3,
+   "crit": false,
+   "enemy_hp": 2
+  },
+  {
+   "t": 6,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    2,
+    4
+   ],
+   "total": 6,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 20
+  },
+  {
+   "t": 6,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    5,
+    2
+   ],
+   "total": 7,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 20
+  },
+  {
+   "t": 7,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    1,
+    5
+   ],
+   "sum": 6,
+   "modifier": 1,
+   "total": 7,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 7,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "goblin",
+   "damage": 4,
+   "crit": false,
+   "enemy_hp": 0
+  },
+  {
+   "t": 7,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    2,
+    3
+   ],
+   "total": 5,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 20
+  },
+  {
+   "t": 8,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    2,
+    4
+   ],
+   "sum": 6,
+   "modifier": 1,
+   "total": 7,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 8,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "goblin",
+   "damage": 2,
+   "crit": false,
+   "enemy_hp": 3
+  },
+  {
+   "t": 8,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    6,
+    2
+   ],
+   "total": 8,
+   "hit": true,
+   "damage": 2,
+   "player_hp": 18
+  },
+  {
+   "t": 9,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    2,
+    1
+   ],
+   "sum": 3,
+   "modifier": 1,
+   "total": 4,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": false
+  },
+  {
+   "t": 9,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "goblin",
+   "damage": 0,
+   "fumble": false
+  },
+  {
+   "t": 9,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    1,
+    2
+   ],
+   "total": 3,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 18
+  },
+  {
+   "t": 10,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    4,
+    5
+   ],
+   "sum": 9,
+   "modifier": 1,
+   "total": 10,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 10,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "goblin",
+   "damage": 1,
+   "crit": false,
+   "enemy_hp": 2
+  },
+  {
+   "t": 10,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    6,
+    4
+   ],
+   "total": 10,
+   "hit": true,
+   "damage": 2,
+   "player_hp": 16
+  },
+  {
+   "t": 12,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    5,
+    6
+   ],
+   "sum": 11,
+   "modifier": 1,
+   "total": 12,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 12,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "goblin",
+   "damage": 4,
+   "crit": false,
+   "enemy_hp": 0
+  },
+  {
+   "t": 12,
+   "type": "combat_win",
+   "node": "hall2"
+  },
+  {
+   "t": 12,
+   "type": "enter_node",
+   "node": "depths"
+  },
+  {
+   "t": 12,
+   "type": "encounter",
+   "node": "depths",
+   "enemies": [
+    "chief",
+    "goblin"
+   ]
+  },
+  {
+   "t": 13,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    6,
+    5
+   ],
+   "sum": 11,
+   "modifier": 2,
+   "total": 13,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 13,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "chief",
+   "damage": 1,
+   "crit": false,
+   "enemy_hp": 17
+  },
+  {
+   "t": 13,
+   "type": "enemy_attack",
+   "enemy": "chief",
+   "dice": [
+    2,
+    3
+   ],
+   "total": 7,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 16
+  },
+  {
+   "t": 13,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    3,
+    1
+   ],
+   "total": 4,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 16
+  },
+  {
+   "t": 14,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    1,
+    5
+   ],
+   "sum": 6,
+   "modifier": 2,
+   "total": 8,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 14,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "chief",
+   "damage": 3,
+   "crit": false,
+   "enemy_hp": 14
+  },
+  {
+   "t": 14,
+   "type": "enemy_attack",
+   "enemy": "chief",
+   "dice": [
+    3,
+    3
+   ],
+   "total": 8,
+   "hit": true,
+   "damage": 5,
+   "player_hp": 11
+  },
+  {
+   "t": 14,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    5,
+    5
+   ],
+   "total": 10,
+   "hit": true,
+   "damage": 1,
+   "player_hp": 10
+  },
+  {
+   "t": 15,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    3,
+    1
+   ],
+   "sum": 4,
+   "modifier": 2,
+   "total": 6,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": false
+  },
+  {
+   "t": 15,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "chief",
+   "damage": 0,
+   "fumble": false
+  },
+  {
+   "t": 15,
+   "type": "enemy_attack",
+   "enemy": "chief",
+   "dice": [
+    1,
+    6
+   ],
+   "total": 9,
+   "hit": true,
+   "damage": 3,
+   "player_hp": 7
+  },
+  {
+   "t": 15,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    2,
+    4
+   ],
+   "total": 6,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 7
+  },
+  {
+   "t": 16,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    3,
+    1
+   ],
+   "sum": 4,
+   "modifier": 2,
+   "total": 6,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": false
+  },
+  {
+   "t": 16,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "chief",
+   "damage": 0,
+   "fumble": false
+  },
+  {
+   "t": 16,
+   "type": "enemy_attack",
+   "enemy": "chief",
+   "dice": [
+    5,
+    6
+   ],
+   "total": 13,
+   "hit": true,
+   "damage": 4,
+   "player_hp": 3
+  },
+  {
+   "t": 16,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    5,
+    4
+   ],
+   "total": 9,
+   "hit": true,
+   "damage": 2,
+   "player_hp": 1
+  },
+  {
+   "t": 17,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    1,
+    4
+   ],
+   "sum": 5,
+   "modifier": 2,
+   "total": 7,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": false
+  },
+  {
+   "t": 17,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "chief",
+   "damage": 0,
+   "fumble": false
+  },
+  {
+   "t": 17,
+   "type": "enemy_attack",
+   "enemy": "chief",
+   "dice": [
+    4,
+    6
+   ],
+   "total": 12,
+   "hit": true,
+   "damage": 5,
+   "player_hp": 0
+  },
+  {
+   "t": 17,
+   "type": "defeat",
+   "node": "depths"
+  },
+  {
+   "t": 17,
+   "type": "ending",
+   "result": "defeat"
+  }
+ ],
+ "expected_focus_trace": [
+  "goblin:location/lookout",
+  "goblin:location/herbhut",
+  "goblin:location/shrine"
+ ],
+ "expected_lod_trace": [
+  [],
+  [],
+  [],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 1,
+    "unlocked_lod_cap": 3,
+    "current_lod": 1
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 3,
+    "unlocked_lod_cap": 3,
+    "current_lod": 2
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 5,
+    "unlocked_lod_cap": 3,
+    "current_lod": 2
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   },
+   {
+    "object_id": "goblin:location/herbhut",
+    "attention_level": 1,
+    "unlocked_lod_cap": 3,
+    "current_lod": 1
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   },
+   {
+    "object_id": "goblin:location/herbhut",
+    "attention_level": 1,
+    "unlocked_lod_cap": 3,
+    "current_lod": 1
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   },
+   {
+    "object_id": "goblin:location/herbhut",
+    "attention_level": 1,
+    "unlocked_lod_cap": 3,
+    "current_lod": 1
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   },
+   {
+    "object_id": "goblin:location/herbhut",
+    "attention_level": 1,
+    "unlocked_lod_cap": 3,
+    "current_lod": 1
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   },
+   {
+    "object_id": "goblin:location/herbhut",
+    "attention_level": 1,
+    "unlocked_lod_cap": 3,
+    "current_lod": 1
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   },
+   {
+    "object_id": "goblin:location/herbhut",
+    "attention_level": 1,
+    "unlocked_lod_cap": 3,
+    "current_lod": 1
+   },
+   {
+    "object_id": "goblin:location/shrine",
+    "attention_level": 1,
+    "unlocked_lod_cap": 3,
+    "current_lod": 1
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   },
+   {
+    "object_id": "goblin:location/herbhut",
+    "attention_level": 1,
+    "unlocked_lod_cap": 3,
+    "current_lod": 1
+   },
+   {
+    "object_id": "goblin:location/shrine",
+    "attention_level": 3,
+    "unlocked_lod_cap": 3,
+    "current_lod": 2
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   },
+   {
+    "object_id": "goblin:location/herbhut",
+    "attention_level": 1,
+    "unlocked_lod_cap": 3,
+    "current_lod": 1
+   },
+   {
+    "object_id": "goblin:location/shrine",
+    "attention_level": 3,
+    "unlocked_lod_cap": 3,
+    "current_lod": 2
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   },
+   {
+    "object_id": "goblin:location/herbhut",
+    "attention_level": 1,
+    "unlocked_lod_cap": 3,
+    "current_lod": 1
+   },
+   {
+    "object_id": "goblin:location/shrine",
+    "attention_level": 3,
+    "unlocked_lod_cap": 3,
+    "current_lod": 2
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   },
+   {
+    "object_id": "goblin:location/herbhut",
+    "attention_level": 1,
+    "unlocked_lod_cap": 3,
+    "current_lod": 1
+   },
+   {
+    "object_id": "goblin:location/shrine",
+    "attention_level": 3,
+    "unlocked_lod_cap": 3,
+    "current_lod": 2
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   },
+   {
+    "object_id": "goblin:location/herbhut",
+    "attention_level": 1,
+    "unlocked_lod_cap": 3,
+    "current_lod": 1
+   },
+   {
+    "object_id": "goblin:location/shrine",
+    "attention_level": 3,
+    "unlocked_lod_cap": 3,
+    "current_lod": 2
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   },
+   {
+    "object_id": "goblin:location/herbhut",
+    "attention_level": 1,
+    "unlocked_lod_cap": 3,
+    "current_lod": 1
+   },
+   {
+    "object_id": "goblin:location/shrine",
+    "attention_level": 3,
+    "unlocked_lod_cap": 3,
+    "current_lod": 2
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   },
+   {
+    "object_id": "goblin:location/herbhut",
+    "attention_level": 1,
+    "unlocked_lod_cap": 3,
+    "current_lod": 1
+   },
+   {
+    "object_id": "goblin:location/shrine",
+    "attention_level": 3,
+    "unlocked_lod_cap": 3,
+    "current_lod": 2
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/lookout",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   },
+   {
+    "object_id": "goblin:location/herbhut",
+    "attention_level": 1,
+    "unlocked_lod_cap": 3,
+    "current_lod": 1
+   },
+   {
+    "object_id": "goblin:location/shrine",
+    "attention_level": 3,
+    "unlocked_lod_cap": 3,
+    "current_lod": 2
+   }
+  ]
+ ],
+ "expected_position_trace": [
+  {
+   "x": 3,
+   "y": 3
+  },
+  {
+   "x": 3,
+   "y": 3
+  },
+  {
+   "x": 3,
+   "y": 3
+  },
+  {
+   "x": 3,
+   "y": 3
+  },
+  {
+   "x": 3,
+   "y": 3
+  },
+  {
+   "x": 3,
+   "y": 3
+  },
+  {
+   "x": 3,
+   "y": 3
+  },
+  {
+   "x": 3,
+   "y": 3
+  },
+  {
+   "x": 3,
+   "y": 1
+  },
+  {
+   "x": 3,
+   "y": 1
+  },
+  {
+   "x": 1,
+   "y": 2
+  },
+  {
+   "x": 1,
+   "y": 2
+  },
+  {
+   "x": 1,
+   "y": 2
+  },
+  {
+   "x": 1,
+   "y": 2
+  },
+  {
+   "x": 5,
+   "y": 2
+  },
+  {
+   "x": 3,
+   "y": 1
+  },
+  {
+   "x": 3,
+   "y": 1
+  },
+  {
+   "x": 3,
+   "y": 1
+  },
+  {
+   "x": 3,
+   "y": 1
+  },
+  {
+   "x": 3,
+   "y": 1
+  },
+  {
+   "x": 3,
+   "y": 3
+  },
+  {
+   "x": 5,
+   "y": 2
+  },
+  {
+   "x": 5,
+   "y": 2
+  },
+  null,
+  null,
+  null
+ ]
+}
