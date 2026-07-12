@@ -41,7 +41,8 @@ def test_well_explore_applies_authoritative_lod_once(attention, cap, bonus):
     rng = state.rng.state(); position = state.player_position; runtime = state.lod_runtime
     assert not _apply_village_action(state, game_map, picked, ExploreAction("well"))
     assert effect_damage_bonus(state, "physical") == bonus
-    assert picked == ["well"] and state.player_position == position and state.lod_runtime == runtime
+    assert picked == [] and state.completed_village_actions == frozenset({"well"})
+    assert state.player_position == position and state.lod_runtime == runtime
     assert state.rng.state() != rng  # existing explore consumes exactly one d6
     before = copy.deepcopy(state.effects)
     state.lod_runtime = LodRuntimeState((ObjectLodProgress(

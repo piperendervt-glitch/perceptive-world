@@ -16,6 +16,8 @@ import json
 import os
 import sys
 
+import pytest
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
@@ -76,7 +78,7 @@ def test_all_fixtures_replay_state():
 
 def test_record_replay_roundtrip():
     for name, fx in _all_fixtures():
-        if fx.get("format_version") in {1, 2, 3, 4, 5, 6}:
+        if fx.get("format_version", 0) in {0, 1, 2, 3, 4, 5, 6, 7}:
             ok, actual, diff = replay_fixture(fx, mode="full")
             assert ok and actual == fx["expected_log"], f"{name}: v1 replay不一致 -> {diff}"
             continue
@@ -96,6 +98,19 @@ def test_protected_envoy_fixture_remains_legacy_v0():
     assert len(fx["expected_log"]) == 10
     ok, actual, diff = replay_fixture(fx, mode="full")
     assert ok and actual == fx["expected_log"], diff
+
+
+@pytest.mark.parametrize("name", [
+    "village_lod_effects_play_v7.json",
+    "village_lod_effects_alt_play_v7.json",
+])
+def test_village_lod_v7_fixtures_are_current_and_deterministic(name):
+    fx = load_fixture(os.path.join(FIXTURE_DIR, name))
+    assert fx["format_version"] == 7
+    first = replay_fixture(fx, mode="full")
+    second = replay_fixture(fx, mode="full")
+    assert first[0] and second[0]
+    assert first[1] == second[1] == fx["expected_log"]
 
 
 def test_focus_v1_fixture_is_canonical_and_has_focus_expectation():

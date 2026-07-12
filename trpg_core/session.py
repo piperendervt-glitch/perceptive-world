@@ -83,8 +83,8 @@ LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
 RELOAD = "__reload__"
 DEFAULT_SCENARIO = "goblin"
 LEGACY_SAVE_FORMAT_VERSION = 0
-CURRENT_SAVE_FORMAT_VERSION = 5
-SUPPORTED_SAVE_FORMAT_VERSIONS = frozenset({0, 1, 2, 3, 4, 5})
+CURRENT_SAVE_FORMAT_VERSION = 6
+SUPPORTED_SAVE_FORMAT_VERSIONS = frozenset({0, 1, 2, 3, 4, 5, 6})
 
 # 村の地図移動の方角エイリアス（英語/略/日本語）。地図移動は乱数を消費しない（UI のみ）。
 _DIR_ALIAS = {
@@ -102,6 +102,18 @@ _DIR_LABEL = {"north": "北", "east": "東", "south": "南", "west": "西"}
 # ---------------------------------------------------------------------------
 
 class GameState:
+    @property
+    def completed_village_actions(self) -> frozenset[str]:
+        return self._completed_village_actions
+
+    @completed_village_actions.setter
+    def completed_village_actions(self, value: frozenset[str]) -> None:
+        if type(value) is not frozenset:
+            raise ValueError("completed_village_actions must be a frozenset")
+        if not value.issubset(self._valid_village_action_keys):
+            raise ValueError("completed_village_actions contains an unknown key")
+        self._completed_village_actions = value
+
     @property
     def player_position(self) -> PlayerPosition | None:
         return self._player_position
@@ -131,6 +143,7 @@ class GameState:
         if scenario is None:
             scenario = load_scenario(DEFAULT_SCENARIO)
         self.scenario = scenario
+        self._valid_village_action_keys = frozenset(scenario.village_order)
         char = scenario.character
         self.seed = seed
         self.rng = Rng(seed)
@@ -145,6 +158,7 @@ class GameState:
         self.effects: list[dict] = []   # 受動効果（hit_bonus/damage_bonus/recon）の宣言
         self.herbs = 0                  # 回復アイテム（item 効果を畳み込んだ数）
         self.buff_labels: list[str] = []  # 内心表示用のラベル（ログには出ない）
+        self.completed_village_actions: frozenset[str] = frozenset()
         # 進行
         self.turn = 0
         self.node = scenario.start_node
@@ -250,6 +264,7 @@ class GameState:
         self.effects = []
         self.herbs = 0
         self.buff_labels = []
+        self.completed_village_actions = frozenset()
         # 敗北後は村の入口（広場）から歩き直す
         self.transition_location(
             self.scenario.map_start if getattr(self.scenario, "has_map", False) else None
@@ -309,7 +324,54 @@ def make_save_document(state: GameState) -> dict:
         {"x": position.x, "y": position.y} if position is not None else None
     )
     document["story_spatial_active"] = bool(state.story_spatial_active)
+    document["completed_village_actions"] = sorted(state.completed_village_actions)
     return document
+
+
+_LEGACY_COMPLETION_LABELS = {
+    "古い祠に祈る": "shrine",
+    "森を偵察する": "scout",
+    "薬草の女を訪ねる": "herbs",
+    "村長に詳しく聞く": "elder",
+    "井戸を調べる": "well",
+}
+
+
+def _decode_completed_village_actions(document, version, valid_keys) -> frozenset[str]:
+    if version >= 6:
+        raw = document.get("completed_village_actions")
+        if type(raw) is not list:
+            raise ValueError("completed_village_actions must be an array")
+        if any(type(key) is not str or key not in valid_keys for key in raw):
+            raise ValueError("unknown completed village action")
+        if len(raw) != len(set(raw)):
+            raise ValueError("completed_village_actions must not contain duplicates")
+        return frozenset(raw)
+    if "completed_village_actions" in document:
+        raise ValueError("legacy save cannot contain completed_village_actions")
+    labels = document.get("buff_labels", [])
+    completed = set()
+    for effect in document.get("effects", []):
+        if not isinstance(effect, Mapping):
+            continue
+        if effect.get("type") == "recon":
+            completed.add("scout")
+        elif (effect.get("type") == "hit_bonus"
+              and effect.get("target_enemy") == "chief"
+              and effect.get("value") == 2):
+            completed.add("elder")
+        elif (effect.get("type") == "hit_bonus"
+              and effect.get("target_enemy") is None
+              and effect.get("value") == 1):
+            completed.add("shrine")
+        elif (effect.get("type") == "damage_bonus"
+              and effect.get("kind") == "physical"):
+            completed.add("well")
+    for label in labels:
+        key = _LEGACY_COMPLETION_LABELS.get(label)
+        if key is not None:
+            completed.add(key)
+    return frozenset(completed)
 
 
 def _decode_lod_runtime(document, version):
@@ -380,8 +442,19 @@ def _validated_save_state(document, scenario):
     """Validate into an isolated state and return it plus validated focus."""
     version = parse_save_format_version(document)
     lod_runtime = _decode_lod_runtime(document, version)
+    completed_actions = _decode_completed_village_actions(
+        document, version, frozenset(scenario.village_order),
+    )
     if document.get("scenario_id") != scenario.id:
         raise ValueError("save scenario_id does not match the active scenario")
+    if version >= 6 and scenario.id == "goblin":
+        label_actions = frozenset(
+            _LEGACY_COMPLETION_LABELS[label]
+            for label in document.get("buff_labels", [])
+            if label in _LEGACY_COMPLETION_LABELS
+        )
+        if label_actions != completed_actions:
+            raise ValueError("completed village actions contradict buff labels")
     for field in GameState._SNAP_FIELDS + ("scenario_id", "rng_a"):
         if field not in document:
             raise ValueError(f"save field is missing: {field}")
@@ -442,6 +515,7 @@ def _validated_save_state(document, scenario):
     candidate.story_spatial_active = story_active
     candidate.player_position = player_position
     candidate.lod_runtime = lod_runtime
+    candidate.completed_village_actions = completed_actions
     if focused is not None:
         if not scenario.has_map:
             raise ValueError("focused_object_id requires an active map")
@@ -466,6 +540,7 @@ class ScriptedController:
     def __init__(self, explores, node_choices, combat_cmds):
         self.legacy_village_batch = True
         self.well_effect_profile = "legacy"
+        self.village_effect_profile = "legacy_all"
         self._explores = list(explores)
         self._village_events = deque()
         self._choices = deque(node_choices)   # ノード選択（遭遇順）
@@ -534,15 +609,16 @@ def _goto(state: GameState, node_id: str) -> None:
     state.emit(type="enter_node", node=node_id)
 
 
-def _village_context(state, game_map, picked) -> VillageInputContext:
+def _village_context(state, game_map, picked=()) -> VillageInputContext:
     sc = state.scenario
+    completed = state.completed_village_actions
     if game_map is None:
         focusable = ()
         moves = ()
         current_id = None
         current_explore = None
-        explore_keys = tuple(k for k in sc.village_order if k not in picked)
-        can_depart = len(picked) >= sc.village_pick_count
+        explore_keys = tuple(k for k in sc.village_order if k not in completed)
+        can_depart = len(completed) >= sc.village_pick_count
     else:
         focusable = focusable_world_object_ids_for_current_location(sc.id, game_map)
         current_id = location_world_object_id(sc.id, game_map.current)
@@ -551,10 +627,10 @@ def _village_context(state, game_map, picked) -> VillageInputContext:
             for direction, destination in game_map.exits().items()
         )
         key = game_map.here().action
-        current_explore = key if key and key not in picked else None
+        current_explore = key if key and key not in completed else None
         explore_keys = (current_explore,) if current_explore is not None else ()
         can_depart = (game_map.here().leads_to_adventure
-                      and len(picked) >= sc.village_pick_count)
+                      and len(completed) >= sc.village_pick_count)
     return VillageInputContext(
         scenario_id=sc.id,
         current_location_object_id=current_id,
@@ -579,6 +655,71 @@ def _current_well_lod(state) -> int:
     return derive_current_lod(content.lod_spec, progress.attention, progress.lod_state)
 
 
+def _current_object_lod(state, object_id: WorldObjectId) -> int:
+    from .lod import derive_current_lod
+    from .lod_actions import initial_lod_progress, lod_progress_for_world_object
+    content = lod_content_for_world_object(object_id)
+    if content is None:
+        raise ValueError("village effect object has no LOD content")
+    progress = lod_progress_for_world_object(state.lod_runtime, object_id)
+    if progress is None:
+        progress = initial_lod_progress(content)
+    return derive_current_lod(content.lod_spec, progress.attention, progress.lod_state)
+
+
+def _village_lod_explore_result(state, action_key, profile):
+    from .village_lod_effects import village_effect_for_lod, village_lod_effect_spec
+    locations = {
+        "shrine": "shrine", "scout": "lookout",
+        "herbs": "herbhut", "elder": "elderhouse",
+    }
+    object_id = WorldObjectId("goblin", f"location/{locations[action_key]}")
+    spec = village_lod_effect_spec(object_id, action_key)
+    if profile not in {"legacy_all", "well_current", "all_current"}:
+        raise ValueError("unknown village effect profile")
+    legacy = profile != "all_current"
+    lod = _current_object_lod(state, object_id)
+    delta = village_effect_for_lod(object_id, action_key, lod, legacy=legacy)
+    effects = []
+    if delta.global_hit_bonus:
+        effects.append({"type": "hit_bonus", "value": delta.global_hit_bonus})
+    if delta.watcher_hit_bonus:
+        effects.append({"type": "hit_bonus", "target_enemy": "sentry", "value": delta.watcher_hit_bonus})
+    if delta.chief_hit_bonus:
+        effects.append({"type": "hit_bonus", "target_enemy": "chief", "value": delta.chief_hit_bonus})
+    if delta.herbs_delta:
+        effects.append({"type": "item", "item": "herb", "count": delta.herbs_delta})
+    if delta.grants_recon:
+        effects.append({"type": "recon"})
+    if legacy:
+        return tuple(effects), None
+    gains = {
+        "shrine": (
+            "古い祠で祈り、準備を整えた。追加の加護は得られなかった。",
+            "古い祠の加護を得た。頭目への命中補正 +1",
+            "古い祠の加護を得た。全命中補正 +1",
+            "古い祠の強い加護を得た。全命中補正 +2",
+        ),
+        "scout": (
+            "物見櫓から周囲を確かめ、準備を整えた。追加効果は得られなかった。",
+            "物見櫓から見張りの動きを読んだ。見張りへの命中補正 +1",
+            "物見櫓から偵察効果を獲得した。",
+            "物見櫓から偵察効果を獲得した。頭目への命中補正 +1",
+        ),
+        "herbs": (
+            "薬草小屋を訪ね、準備を整えた。薬草は入手できなかった。",
+            "薬草を1個入手した。", "薬草を2個入手した。", "薬草を3個入手した。",
+        ),
+        "elder": (
+            "村長から情報を聞き、準備を整えた。追加支援は得られなかった。",
+            "村長から支援を得た。頭目への命中補正 +1",
+            "村長から支援を得た。頭目への命中補正 +2",
+            "村長から強い支援を得た。頭目への命中補正 +3",
+        ),
+    }
+    return tuple(effects), gains[action_key][lod]
+
+
 def _well_explore_result(state, profile):
     if profile == "legacy":
         return None, None
@@ -597,7 +738,8 @@ def _well_explore_result(state, profile):
 
 
 def _apply_village_action(state, game_map, picked, action, *, legacy_batch=False,
-                          well_effect_profile="current") -> bool:
+                          well_effect_profile="current",
+                          village_effect_profile="all_current") -> bool:
     """Validate and apply one canonical event. Return True only for depart."""
     from . import village
     context = _village_context(state, game_map, picked)
@@ -656,18 +798,24 @@ def _apply_village_action(state, game_map, picked, action, *, legacy_batch=False
         game_map.current = destination
         return False
     if isinstance(action, ExploreAction):
-        available = (tuple(k for k in state.scenario.village_order if k not in picked)
+        completed = state.completed_village_actions
+        available = (tuple(k for k in state.scenario.village_order if k not in completed)
                      if legacy_batch else context.explore_keys)
         if action.key not in available:
             raise ValueError("explore key is not currently available")
         effect = gain = None
         if state.scenario.id == "goblin" and action.key == "well":
             effect, gain = _well_explore_result(state, well_effect_profile)
+        elif state.scenario.id == "goblin" and action.key in {"shrine", "scout", "herbs", "elder"}:
+            effect, gain = _village_lod_explore_result(
+                state, action.key, village_effect_profile,
+            )
         village.explore(state, action.key, effect_override=effect, gain_override=gain)
-        picked.append(action.key)
+        state.completed_village_actions = state.completed_village_actions | {action.key}
         return False
     if isinstance(action, DepartAction):
-        if legacy_batch and len(picked) >= state.scenario.village_pick_count:
+        if (legacy_batch
+                and len(state.completed_village_actions) >= state.scenario.village_pick_count):
             state.player_position = None
             state.clear_focused_object()
             return True
@@ -686,7 +834,7 @@ def _run_village(state: GameState, controller, *, on_village_event_applied=None)
     game_map = build_map(sc, state.location or sc.map_start) if sc.has_map else None
     if game_map is not None and state.location is None:
         state.transition_location(game_map.current)
-    picked = []
+    picked = list(state.completed_village_actions)
     if hasattr(controller, "begin_village"):
         controller.begin_village()
     while True:
@@ -701,7 +849,10 @@ def _run_village(state: GameState, controller, *, on_village_event_applied=None)
             departed = _apply_village_action(
                     state, game_map, picked, action,
                     legacy_batch=bool(getattr(controller, "legacy_village_batch", False)),
-                    well_effect_profile=getattr(controller, "well_effect_profile", "current"))
+                    well_effect_profile=getattr(controller, "well_effect_profile", "current"),
+                    village_effect_profile=getattr(
+                        controller, "village_effect_profile", "all_current",
+                    ))
         except ValueError as exc:
             if hasattr(controller, "village_event_rejected"):
                 controller.village_event_rejected(action, exc)
@@ -712,6 +863,7 @@ def _run_village(state: GameState, controller, *, on_village_event_applied=None)
             raise
         if hasattr(controller, "village_event_applied"):
             controller.village_event_applied(action)
+        picked[:] = sorted(state.completed_village_actions)
         if on_village_event_applied is not None:
             on_village_event_applied(action, state.focus_state.focused_object_id)
         if departed:
@@ -1500,6 +1652,7 @@ class ConsoleController:
         self.state.restore(candidate.snapshot())
         self.state.player_position = candidate.player_position
         self.state.lod_runtime = candidate.lod_runtime
+        self.state.completed_village_actions = candidate.completed_village_actions
         if focused is None:
             self.state.clear_focused_object()
         else:

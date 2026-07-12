@@ -31,6 +31,7 @@ from trpg_core.world import WorldFact, WorldObjectId
 from trpg_core.presentation import (
     focused_object_lod_view, visual_asset_key_for_object,
     visible_world_fact_view,
+    presentation_label_for_object,
 )
 from trpg_core.scenario_loader import load_scenario
 from trpg_core.session import GameState
@@ -278,6 +279,28 @@ def test_exact_well_fact_label_mapping_rejects_fallbacks():
     with pytest.raises(ValueError):
         visible_world_fact_view(WorldObjectId("other", "location/well"),
                                 WorldFact("shape", "well_like"))
+
+
+@pytest.mark.parametrize("local_id,name,fact,label", [
+    ("location/well", "古井戸", WorldFact("shape", "well_like"), "井戸らしき形"),
+    ("location/shrine", "古い祠", WorldFact("shape", "small_shrine"), "小さな祠"),
+    ("location/lookout", "物見櫓", WorldFact("shape", "lookout_tower"), "物見櫓"),
+    ("location/herbhut", "薬草小屋", WorldFact("shape", "small_hut"), "小さな小屋"),
+    ("location/elderhouse", "村長の家", WorldFact("shape", "large_house"), "大きな家"),
+])
+def test_exact_village_object_and_fact_labels(local_id, name, fact, label):
+    object_id = WorldObjectId("goblin", local_id)
+    assert presentation_label_for_object(object_id) == name
+    assert visible_world_fact_view(object_id, fact).label == label
+    assert str(object_id) not in name + label
+
+
+def test_unknown_object_label_mapping_remains_closed():
+    unknown = WorldObjectId("goblin", "location/missing")
+    with pytest.raises(ValueError, match="no presentation label mapping"):
+        presentation_label_for_object(unknown)
+    with pytest.raises(ValueError, match="no presentation label mapping"):
+        visible_world_fact_view(unknown, WorldFact("shape", "small_hut"))
 
 
 @pytest.mark.parametrize("attention, cap, lod, keys", [

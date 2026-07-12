@@ -34,7 +34,12 @@ def explore(state, key: str, *, effect_override=None, gain_override=None) -> Non
     """探索を 1 つ実行する。d6 を 1 回消費し、効果を適用し、explore を記録する。"""
     opt = state.scenario.village_option(key)
     d6(state.rng)                                  # ★選択のたびに d6 を 1 回消費（不変）
-    apply_effect(state, opt.get("effect") if effect_override is None else effect_override)
+    selected = opt.get("effect") if effect_override is None else effect_override
+    if isinstance(selected, (tuple, list)):
+        for effect in selected:
+            apply_effect(state, effect)
+    else:
+        apply_effect(state, selected)
     state.buff_labels.append(opt.get("name", key))  # 内心表示用（ログには出ない）
     state.emit(type="explore", place=key,
                gain=opt.get("gain", "") if gain_override is None else gain_override)

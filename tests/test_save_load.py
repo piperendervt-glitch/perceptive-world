@@ -35,15 +35,16 @@ def _fingerprint(state):
         "rng": state.rng.state(),
         "log": copy.deepcopy(state.log),
         "player_position": state.player_position,
+        "completed_village_actions": state.completed_village_actions,
     }
 
 
-@pytest.mark.parametrize("document,expected", [({}, 0), ({"format_version": 0}, 0), ({"format_version": 1}, 1), ({"format_version": 2}, 2), ({"format_version": 3}, 3), ({"format_version": 4}, 4), ({"format_version": 5}, 5)])
+@pytest.mark.parametrize("document,expected", [({}, 0), ({"format_version": 0}, 0), ({"format_version": 1}, 1), ({"format_version": 2}, 2), ({"format_version": 3}, 3), ({"format_version": 4}, 4), ({"format_version": 5}, 5), ({"format_version": 6}, 6)])
 def test_save_format_version_parser(document, expected):
     assert parse_save_format_version(document) == expected
 
 
-@pytest.mark.parametrize("value", [True, False, "1", 1.0, -1, 6, None, [], {}])
+@pytest.mark.parametrize("value", [True, False, "1", 1.0, -1, 7, None, [], {}])
 def test_save_format_version_parser_rejects_invalid_values(value):
     with pytest.raises(ValueError, match="format_version"):
         parse_save_format_version({"format_version": value})
@@ -54,7 +55,7 @@ def test_canonical_save_document_always_contains_version_and_focus_without_side_
     focused = _focus(state)
     before = _fingerprint(state)
     document = make_save_document(state)
-    assert document["format_version"] == CURRENT_SAVE_FORMAT_VERSION == 5
+    assert document["format_version"] == CURRENT_SAVE_FORMAT_VERSION == 6
     assert document["player_position"] == {"x": 3, "y": 3}
     assert document["lod_runtime"] == []
     assert document["focused_object_id"] == "goblin:location/well"
@@ -190,7 +191,7 @@ def test_save_v4_round_trip_persists_only_player_coordinates(tmp_path):
     state.transition_location("well")
     state.player_position = PlayerPosition(2, 2)
     document = make_save_document(state)
-    assert document["format_version"] == 5
+    assert document["format_version"] == 6
     assert document["player_position"] == {"x": 2, "y": 2}
     assert set(document["player_position"]) == {"x", "y"}
     controller = ConsoleController(state, str(tmp_path))
@@ -231,6 +232,7 @@ def test_v3_null_position_migrates_to_catalog_spawn_and_v4_exit_is_rejected(tmp_
     document = make_save_document(live)
     document["format_version"] = 3
     document.pop("story_spatial_active")
+    document.pop("completed_village_actions")
     document["player_position"] = None
     (tmp_path / "legacy-null.json").write_text(
         json.dumps(document), encoding="utf-8",
@@ -251,7 +253,7 @@ def test_save_v5_story_position_round_trip_and_trigger_rejection(tmp_path):
     live.transition_node("forest", force=True)
     live.player_position = PlayerPosition(4, 2)
     document = make_save_document(live)
-    assert document["format_version"] == 5
+    assert document["format_version"] == 6
     assert document["story_spatial_active"] is True
     (tmp_path / "story.json").write_text(json.dumps(document), encoding="utf-8")
     live.transition_location("plaza")

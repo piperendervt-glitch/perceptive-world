@@ -58,7 +58,8 @@ def test_shared_move_and_focus_guards_apply_canonical_events():
     assert state.player_position == PlayerPosition(3, 3)
     assert state.focus_state.focused_object_id is None
     assert not _apply_village_action(state, game_map, picked, ExploreAction("well"))
-    assert picked == ["well"]
+    assert picked == []
+    assert state.completed_village_actions == frozenset({"well"})
 
 
 def test_coarse_scene_transition_sets_spawn_then_clears_position():

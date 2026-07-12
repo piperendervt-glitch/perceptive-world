@@ -1,5 +1,7 @@
 import sys
 
+import pytest
+
 from trpg_core.input_actions import (
     ClearFocusAction, InspectFocusedObjectAction, MovePlayerToPositionAction,
     MoveToLocationAction, ObserveFocusedObjectAction, SetFocusAction,
@@ -35,6 +37,38 @@ def test_client_actions_are_canonical_and_hover_render_have_no_action():
     assert adapter.observe_action() == ObserveFocusedObjectAction()
     assert adapter.inspect_action() == InspectFocusedObjectAction()
     assert adapter.clear_focus_action() == ClearFocusAction()
+
+
+@pytest.mark.parametrize("scene,name", [
+    ("shrine", "古い祠"),
+    ("lookout", "物見櫓"),
+    ("herbhut", "薬草小屋"),
+    ("elderhouse", "村長の家"),
+])
+def test_dwell_focus_builds_safe_lod_snapshot_for_village_objects(scene, name):
+    from trpg_core.scenario_loader import load_scenario
+    from trpg_core.session import GameState
+
+    state = GameState(7, scenario=load_scenario("goblin"))
+    state.location = scene
+    state.player_position = state.spatial_definition_for_location(scene).player_spawn
+    model = TwoDSessionModel(state)
+    spatial = model.snapshot.spatial_scene
+    target = spatial.objects[0]
+    assert target.label == name
+    layout = build_two_d_layout(
+        window_width=1000, window_height=700,
+        scene_width=spatial.width, scene_height=spatial.height,
+    )
+    rect = pixel_rect_for_cell(layout, target.position)
+    action = model.adapter.click_action(spatial, layout, x=rect.left + 1, y=rect.top + 1)
+    assert action == SetFocusAction(target.object_id)
+    assert model.dispatch(action)
+    focused = model.snapshot.focused_object_lod
+    assert focused.current_lod == 0
+    assert tuple(fact.key for fact in focused.visible_facts) == ("shape",)
+    assert all(fact.label and str(target.object_id) not in fact.label
+               for fact in focused.visible_facts)
 
 
 def test_session_model_connects_actions_keys_click_and_redraw_to_shared_engine():
@@ -110,7 +144,7 @@ def test_forest_gate_depart_switches_to_story_then_combat_actions():
     from trpg_core.world import location_world_object_id
     state = GameState(7, scenario=load_scenario("goblin"))
     model = TwoDSessionModel(state)
-    model.picked[:] = ["well", "scout", "herbs"]
+    state.completed_village_actions = frozenset({"well", "scout", "herbs"})
     assert model.dispatch(MoveToLocationAction(
         location_world_object_id("goblin", "elderhouse"),
     ))

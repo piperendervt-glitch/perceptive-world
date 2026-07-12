@@ -17,7 +17,7 @@ from .lod_actions import (
     lod_progress_for_world_object,
 )
 from .lod_content import lod_content_for_world_object, visible_facts_for_lod
-from .rules import effect_damage_bonus, modifier
+from .rules import effect_damage_bonus, effect_hit_bonus, has_recon, modifier
 from .world import (
     WorldFact,
     WorldObjectId,
@@ -69,22 +69,58 @@ class FocusedObjectLodView:
             keys.add(fact.key)
 
 
-_GOBLIN_WELL_FACT_LABELS = (
-    ("shape", "well_like", "井戸らしき形"),
-    ("material", "stone", "石造り"),
-    ("age", "old", "古い"),
-    ("pulley", "recent", "新しい滑車"),
-    ("rope", "worn", "擦り切れた縄"),
-    ("mark", "faded_emblem", "消えかけた紋章"),
-)
+_OBJECT_PRESENTATION_LABELS = {
+    WorldObjectId("goblin", "location/well"): ("古井戸", (
+        ("shape", "well_like", "井戸らしき形"),
+        ("material", "stone", "石造り"),
+        ("age", "old", "古い"),
+        ("pulley", "recent", "新しい滑車"),
+        ("rope", "worn", "擦り切れた縄"),
+        ("mark", "faded_emblem", "消えかけた紋章"),
+    )),
+    WorldObjectId("goblin", "location/shrine"): ("古い祠", (
+        ("shape", "small_shrine", "小さな祠"),
+        ("material", "weathered_stone", "風雨にさらされた石造り"),
+        ("offering", "kept_clean", "供物台は清められている"),
+        ("condition", "quietly_usable", "静かに祈りを捧げられる"),
+    )),
+    WorldObjectId("goblin", "location/lookout"): ("物見櫓", (
+        ("shape", "lookout_tower", "物見櫓"),
+        ("material", "timber", "木造"),
+        ("view", "forest_edge_visible", "森の縁を見渡せる"),
+        ("condition", "stable_vantage", "足場は見張りに使える"),
+    )),
+    WorldObjectId("goblin", "location/herbhut"): ("薬草小屋", (
+        ("shape", "small_hut", "小さな小屋"),
+        ("scent", "dried_herbs", "乾燥薬草の香り"),
+        ("stock", "prepared_bundles", "薬草の束が用意されている"),
+        ("condition", "carefully_sorted", "薬草は丁寧に選別されている"),
+    )),
+    WorldObjectId("goblin", "location/elderhouse"): ("村長の家", (
+        ("shape", "large_house", "大きな家"),
+        ("material", "old_timber", "年季の入った木造"),
+        ("records", "village_notes", "村の記録が置かれている"),
+        ("condition", "orderly_meeting_place", "話を聞けるよう整えられている"),
+    )),
+}
+
+
+def presentation_label_for_object(object_id: WorldObjectId) -> str:
+    if not isinstance(object_id, WorldObjectId):
+        raise ValueError("exact WorldObjectId is required")
+    mapped = _OBJECT_PRESENTATION_LABELS.get(object_id)
+    if mapped is None:
+        raise ValueError("no presentation label mapping for object")
+    return mapped[0]
 
 
 def visible_world_fact_view(object_id: WorldObjectId, fact: WorldFact) -> VisibleWorldFactView:
     if not isinstance(object_id, WorldObjectId) or not isinstance(fact, WorldFact):
         raise ValueError("exact WorldObjectId and WorldFact are required")
-    if object_id != WorldObjectId("goblin", "location/well"):
+    mapped = _OBJECT_PRESENTATION_LABELS.get(object_id)
+    if mapped is None:
         raise ValueError("no presentation label mapping for object")
-    label = next((label for key, value, label in _GOBLIN_WELL_FACT_LABELS
+    label = next((label for key, value, label in mapped[1]
                   if key == fact.key and value == fact.value), None)
     if label is None:
         raise ValueError("no exact presentation label mapping for fact")
@@ -137,6 +173,10 @@ class PlayerView:
     buffs: tuple[str, ...] = field(default_factory=tuple)
     name: str = "H"
     physical_damage_bonus: int = 0
+    global_hit_bonus: int = 0
+    watcher_hit_bonus: int = 0
+    chief_hit_bonus: int = 0
+    recon_active: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "attributes", tuple(self.attributes))
@@ -401,6 +441,16 @@ def build_render_snapshot(
         attributes=attributes,
         buffs=tuple(str(label) for label in state.buff_labels),
         physical_damage_bonus=effect_damage_bonus(state, "physical"),
+        global_hit_bonus=effect_hit_bonus(state, "__no_target__"),
+        watcher_hit_bonus=(
+            effect_hit_bonus(state, "sentry")
+            - effect_hit_bonus(state, "__no_target__")
+        ),
+        chief_hit_bonus=(
+            effect_hit_bonus(state, "chief")
+            - effect_hit_bonus(state, "__no_target__")
+        ),
+        recon_active=has_recon(state),
     )
     focus_state = getattr(state, "focus_state", None)
     focused_id = getattr(focus_state, "focused_object_id", None)

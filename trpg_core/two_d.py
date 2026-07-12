@@ -219,7 +219,6 @@ class TwoDSessionModel:
         from .map import build_map
         self.state = state
         self.game_map = build_map(state.scenario, state.location)
-        self.picked = []
         self.feedback = "Ready"
         self.adapter = TwoDClientAdapter()
         self.closed = False
@@ -274,7 +273,7 @@ class TwoDSessionModel:
                 ),
             )
 
-        context = _village_context(self.state, self.game_map, self.picked)
+        context = _village_context(self.state, self.game_map)
         actions = []
         direction_labels = {"north": "北へ", "east": "東へ", "south": "南へ", "west": "西へ"}
         if self.state.spatial_definition_for_location(self.game_map.current) is None:
@@ -287,7 +286,8 @@ class TwoDSessionModel:
             actions.append((option.get("name", "Explore"), ExploreAction(context.current_explore_key)))
         actions.append(("周囲を見る", None))
         self._actions = tuple(actions)
-        objective = f"支度をあと{max(0, self.state.scenario.village_pick_count-len(self.picked))}つ整える"
+        completed_count = len(self.state.completed_village_actions)
+        objective = f"支度をあと{max(0, self.state.scenario.village_pick_count-completed_count)}つ整える"
         presentation_context = PresentationContext(
             scene_kind="village", scene_id=self.game_map.current,
             scene_title=self.game_map.here().name, objective=objective,
@@ -310,7 +310,7 @@ class TwoDSessionModel:
         try:
             if self.phase == "village":
                 departed = _apply_village_action(
-                    self.state, self.game_map, self.picked, action,
+                    self.state, self.game_map, (), action,
                 )
                 if departed:
                     self._enter_story_phase()
@@ -655,12 +655,22 @@ def run_two_d_session(seed: int, scenario_id: str) -> None:
             )
         elif model.phase == "village":
             player = snap.player
-            status_lines = 8
+            effect_lines = []
+            if player.global_hit_bonus:
+                effect_lines.append(f"全命中補正 +{player.global_hit_bonus}")
+            if player.watcher_hit_bonus:
+                effect_lines.append(f"見張りへの命中補正 +{player.watcher_hit_bonus}")
+            if player.chief_hit_bonus:
+                effect_lines.append(f"頭目への命中補正 +{player.chief_hit_bonus}")
+            if player.recon_active:
+                effect_lines.append("偵察効果 有効")
+            status_lines = 8 + len(effect_lines)
             status_text = (
                 f"Scene: {snap.scene_title or 'なし'}\nPlayer\n{player.name}\n"
                 f"HP {player.hp} / {player.hp_max}\nMP {player.mp} / {player.mp_max}\n"
                 f"薬草 {player.recovery_item_count}\n物理ダメージ補正 +{player.physical_damage_bonus}\n"
-                f"Position: {pos}\nFocus: {focus}\nLOD: {lod}"
+                + ("\n".join(effect_lines) + "\n" if effect_lines else "")
+                + f"Position: {pos}\nFocus: {focus}\nLOD: {lod}"
             )
         else:
             status_lines = 1

@@ -97,6 +97,10 @@ class FixtureController:
         self.legacy_village_batch = False
         self.canonical_inputs: list[str] = []
         self.well_effect_profile = "legacy" if format_version <= 5 else "current"
+        self.village_effect_profile = (
+            "legacy_all" if format_version <= 5
+            else ("well_current" if format_version == 6 else "all_current")
+        )
 
     def explores(self):
         keys = []
@@ -313,8 +317,8 @@ def _run(
 def expected_focus_trace(fixture: dict, *, format_version: int):
     if "expected_focus_trace" not in fixture:
         return None
-    if format_version not in {1, 2, 3, 4, 5, 6}:
-        raise ValueError("expected_focus_trace is supported only for format_version 1 through 6")
+    if format_version not in {1, 2, 3, 4, 5, 6, 7}:
+        raise ValueError("expected_focus_trace is supported only for format_version 1 through 7")
     raw = fixture["expected_focus_trace"]
     if not isinstance(raw, list):
         raise ValueError("expected_focus_trace must be an array")
@@ -381,8 +385,8 @@ def serialize_lod_trace(trace) -> list[list[dict]]:
 def expected_lod_trace(fixture: dict, *, format_version: int):
     if "expected_lod_trace" not in fixture:
         return None
-    if format_version not in {2, 3, 4, 5, 6}:
-        raise ValueError("expected_lod_trace is supported only for format_version 2 through 6")
+    if format_version not in {2, 3, 4, 5, 6, 7}:
+        raise ValueError("expected_lod_trace is supported only for format_version 2 through 7")
     raw = fixture["expected_lod_trace"]
     if not isinstance(raw, list):
         raise ValueError("expected_lod_trace must be an array")
@@ -436,8 +440,8 @@ def serialize_position_trace(trace):
 def expected_position_trace(fixture: dict, *, format_version: int):
     if "expected_position_trace" not in fixture:
         return None
-    if format_version not in {3, 4, 5, 6}:
-        raise ValueError("expected_position_trace is supported only for format_version 3 through 6")
+    if format_version not in {3, 4, 5, 6, 7}:
+        raise ValueError("expected_position_trace is supported only for format_version 3 through 7")
     raw = fixture["expected_position_trace"]
     if type(raw) is not list:
         raise ValueError("expected_position_trace must be an array")

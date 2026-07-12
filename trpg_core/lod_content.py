@@ -112,7 +112,51 @@ GOBLIN_WELL_LOD_CONTENT = ObjectLodContentSpec(
 )
 
 
-_LOD_CONTENT = (GOBLIN_WELL_LOD_CONTENT,)
+def _village_content(scene: str, facts: tuple[WorldFact, ...]) -> ObjectLodContentSpec:
+    keys = tuple(fact.key for fact in facts)
+    return ObjectLodContentSpec(
+        ObjectLodSpec(
+            WorldObjectId("goblin", f"location/{scene}"),
+            attention_thresholds=(0, 1, 3, 6),
+        ),
+        facts,
+        ((keys[0],), keys[:2], keys[:3], keys),
+    )
+
+
+GOBLIN_SHRINE_LOD_CONTENT = _village_content("shrine", (
+    WorldFact("shape", "small_shrine"),
+    WorldFact("material", "weathered_stone"),
+    WorldFact("offering", "kept_clean"),
+    WorldFact("condition", "quietly_usable"),
+))
+GOBLIN_LOOKOUT_LOD_CONTENT = _village_content("lookout", (
+    WorldFact("shape", "lookout_tower"),
+    WorldFact("material", "timber"),
+    WorldFact("view", "forest_edge_visible"),
+    WorldFact("condition", "stable_vantage"),
+))
+GOBLIN_HERBHUT_LOD_CONTENT = _village_content("herbhut", (
+    WorldFact("shape", "small_hut"),
+    WorldFact("scent", "dried_herbs"),
+    WorldFact("stock", "prepared_bundles"),
+    WorldFact("condition", "carefully_sorted"),
+))
+GOBLIN_ELDERHOUSE_LOD_CONTENT = _village_content("elderhouse", (
+    WorldFact("shape", "large_house"),
+    WorldFact("material", "old_timber"),
+    WorldFact("records", "village_notes"),
+    WorldFact("condition", "orderly_meeting_place"),
+))
+
+
+_LOD_CONTENT = (
+    GOBLIN_WELL_LOD_CONTENT,
+    GOBLIN_SHRINE_LOD_CONTENT,
+    GOBLIN_LOOKOUT_LOD_CONTENT,
+    GOBLIN_HERBHUT_LOD_CONTENT,
+    GOBLIN_ELDERHOUSE_LOD_CONTENT,
+)
 
 
 def lod_content_for_world_object(
