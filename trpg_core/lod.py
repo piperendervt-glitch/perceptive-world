@@ -101,6 +101,56 @@ def derive_current_lod(
     )
 
 
+def apply_attention_gain(
+    state: ObjectAttentionState,
+    gain: int,
+) -> ObjectAttentionState:
+    """Apply one explicit positive attention gain without clamping."""
+
+    if not isinstance(state, ObjectAttentionState):
+        raise ValueError("state must be an ObjectAttentionState")
+    if type(gain) is not int or gain <= 0:
+        raise ValueError("gain must be a positive int")
+    return ObjectAttentionState(state.attention_level + gain)
+
+
+def attention_after_observe(
+    state: ObjectAttentionState,
+) -> ObjectAttentionState:
+    """Initial Observe policy: one explicit update grants one attention."""
+
+    return apply_attention_gain(state, 1)
+
+
+def attention_after_inspect(
+    state: ObjectAttentionState,
+) -> ObjectAttentionState:
+    """Initial Inspect policy: one explicit update grants two attention."""
+
+    return apply_attention_gain(state, 2)
+
+
+def unlock_lod_cap(
+    spec: ObjectLodSpec,
+    lod_state: ObjectLodState,
+    target_cap: int,
+) -> ObjectLodState:
+    """Monotonically unlock an explicit cap within the object's LOD spec."""
+
+    if not isinstance(spec, ObjectLodSpec):
+        raise ValueError("spec must be an ObjectLodSpec")
+    if not isinstance(lod_state, ObjectLodState):
+        raise ValueError("lod_state must be an ObjectLodState")
+    _require_non_negative_int(target_cap, "target_cap")
+    if lod_state.unlocked_lod_cap > spec.max_lod:
+        raise ValueError("existing unlocked_lod_cap exceeds spec max_lod")
+    if target_cap > spec.max_lod:
+        raise ValueError("target_cap exceeds spec max_lod")
+    if target_cap < lod_state.unlocked_lod_cap:
+        raise ValueError("target_cap must not decrease unlocked_lod_cap")
+    return ObjectLodState(target_cap)
+
+
 def attention_after_focus_change(
     state: ObjectAttentionState,
 ) -> ObjectAttentionState:
