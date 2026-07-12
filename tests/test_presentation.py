@@ -305,3 +305,32 @@ def test_focused_lod_projection_is_opt_in_and_empty_runtime_is_read_only():
     assert view.current_lod == 0
     assert tuple(f.key for f in view.visible_facts) == ("shape",)
     assert runtime == LodRuntimeState()
+def test_well_snapshot_exposes_neutral_spatial_view_without_mutation():
+    import copy
+    from trpg_core.map import build_map
+    from trpg_core.scenario_loader import load_scenario
+    from trpg_core.session import GameState
+    from trpg_core.spatial import PlayerPosition
+
+    state = GameState(7, scenario=load_scenario("goblin"))
+    state.transition_location("well")
+    game_map = build_map(state.scenario, "well")
+    before = (copy.deepcopy(state.snapshot()), state.player_position, state.focus_state)
+    snapshot = build_render_snapshot(state, active_game_map=game_map)
+    scene = snapshot.spatial_scene
+    assert (scene.width, scene.height) == (7, 5)
+    assert scene.player_position.x == 1 and scene.player_position.y == 2
+    assert len(scene.walkable_cells) == 15
+    assert len(scene.objects) == 1 and scene.objects[0].label == "古井戸"
+    assert scene.objects[0].focus_candidate is True
+    assert (state.snapshot(), state.player_position, state.focus_state) == before
+
+
+def test_snapshot_without_spatial_definition_has_no_spatial_view():
+    from trpg_core.map import build_map
+    from trpg_core.scenario_loader import load_scenario
+    from trpg_core.session import GameState
+    state = GameState(7, scenario=load_scenario("goblin"))
+    assert build_render_snapshot(
+        state, active_game_map=build_map(state.scenario, state.location),
+    ).spatial_scene is None

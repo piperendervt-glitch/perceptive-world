@@ -163,6 +163,49 @@ class WorldObjectView:
 
 
 @dataclass(frozen=True)
+class SpatialCellView:
+    x: int
+    y: int
+
+    def __post_init__(self):
+        if type(self.x) is not int or type(self.y) is not int:
+            raise ValueError("spatial cell coordinates must be ints")
+
+
+@dataclass(frozen=True)
+class SpatialObjectView:
+    object_id: WorldObjectId
+    label: str
+    position: SpatialCellView
+    blocks_movement: bool
+    focus_candidate: bool
+
+
+@dataclass(frozen=True)
+class SceneSpatialView:
+    width: int
+    height: int
+    walkable_cells: tuple[SpatialCellView, ...]
+    blocked_cells: tuple[SpatialCellView, ...]
+    player_position: SpatialCellView | None
+    objects: tuple[SpatialObjectView, ...]
+
+    def __post_init__(self):
+        if type(self.width) is not int or self.width <= 0 or type(self.height) is not int or self.height <= 0:
+            raise ValueError("spatial dimensions must be positive ints")
+        for name in ("walkable_cells", "blocked_cells", "objects"):
+            if type(getattr(self, name)) is not tuple:
+                raise ValueError(f"{name} must be a tuple")
+        if len(set(self.walkable_cells)) != len(self.walkable_cells):
+            raise ValueError("duplicate walkable cell")
+        if len(set(self.blocked_cells)) != len(self.blocked_cells):
+            raise ValueError("duplicate blocked cell")
+        ids = tuple(item.object_id for item in self.objects)
+        if len(set(ids)) != len(ids):
+            raise ValueError("duplicate spatial object ID")
+
+
+@dataclass(frozen=True)
 class PreparationView:
     selected_keys: tuple[str, ...] = field(default_factory=tuple)
     selected_count: int = 0
@@ -236,6 +279,7 @@ class RenderSnapshot:
     world_objects: tuple[WorldObjectView, ...] = field(default_factory=tuple)
     focused_object_id: str | None = None
     focused_object_lod: FocusedObjectLodView | None = None
+    spatial_scene: SceneSpatialView | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "actions", tuple(self.actions))
@@ -278,6 +322,7 @@ def build_render_snapshot(
     focused_id = getattr(focus_state, "focused_object_id", None)
     world_objects: tuple[WorldObjectView, ...] = ()
     focused_object_id = None
+    spatial_scene = None
     if active_game_map is not None:
         scene_objects = world_objects_for_current_scene(
             scenario_id=state.scenario.id, game_map=active_game_map,
@@ -300,6 +345,38 @@ def build_render_snapshot(
             if focused_id not in focusable_ids:
                 raise ValueError("focused object is not in the current scene")
             focused_object_id = serialize_world_object_id(focused_id)
+        from .spatial import SceneCell, is_blocked_cell
+        from .spatial_content import spatial_definition_for_scene
+        definition = spatial_definition_for_scene(active_game_map.current)
+        if definition is not None:
+            spec = definition.spec
+            visible_by_id = {item.spec.object_id: item for item in scene_objects
+                             if item.visibility.exists_in_scene and item.visibility.perceived}
+            objects = tuple(
+                SpatialObjectView(
+                    placement.object_id,
+                    visible_by_id[placement.object_id].spec.label,
+                    SpatialCellView(placement.position.x, placement.position.y),
+                    placement.blocks_movement,
+                    visible_by_id[placement.object_id].visibility.focus_candidate,
+                )
+                for placement in spec.object_placements
+                if placement.object_id in visible_by_id
+            )
+            blocked = tuple(
+                SpatialCellView(x, y)
+                for y in range(spec.bounds.height)
+                for x in range(spec.bounds.width)
+                if is_blocked_cell(spec, SceneCell(x, y))
+            )
+            position = getattr(state, "player_position", None)
+            spatial_scene = SceneSpatialView(
+                spec.bounds.width, spec.bounds.height,
+                tuple(SpatialCellView(cell.x, cell.y) for cell in spec.walkable_cells),
+                blocked,
+                None if position is None else SpatialCellView(position.x, position.y),
+                objects,
+            )
     elif focused_id is not None:
         raise ValueError("focused object requires an active map scene")
     return RenderSnapshot(
@@ -322,6 +399,7 @@ def build_render_snapshot(
         focused_object_lod=focused_object_lod_view(
             focused_object_id=focused_id, lod_runtime=lod_runtime,
         ),
+        spatial_scene=spatial_scene,
     )
 
 

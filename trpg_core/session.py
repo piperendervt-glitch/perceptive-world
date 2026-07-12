@@ -1530,7 +1530,7 @@ def main(argv):
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--scenario", default=DEFAULT_SCENARIO,
                     help="scenarios/<id>.yaml を選ぶ（既定: goblin）")
-    ap.add_argument("--ui", choices=("menu", "tui"), default="menu",
+    ap.add_argument("--ui", choices=("menu", "tui", "2d"), default="menu",
                     help="対話UI（既定: menu）")
     ap.add_argument("--replay", action="store_true", help="seed=7 の参照入力列を自動再生してログ出力")
     args = ap.parse_args(argv)
@@ -1544,7 +1544,11 @@ def main(argv):
               f"（{len(state.log)} events, ending={state.log[-1].get('result')}）")
         return 0
 
-    play_interactive(args.seed, scenario_id=args.scenario, ui_mode=args.ui)
+    if args.ui == "2d":
+        from .two_d import run_two_d_session
+        run_two_d_session(args.seed, args.scenario)
+    else:
+        play_interactive(args.seed, scenario_id=args.scenario, ui_mode=args.ui)
     return 0
 
 
