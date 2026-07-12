@@ -7,15 +7,16 @@ from dataclasses import dataclass
 from .world import parse_world_object_id
 
 
-CURRENT_RECORD_FORMAT_VERSION = 2
+CURRENT_RECORD_FORMAT_VERSION = 3
 LEGACY_RECORD_FORMAT_VERSION = 0
-SUPPORTED_RECORD_FORMAT_VERSIONS = frozenset({0, 1, 2})
+SUPPORTED_RECORD_FORMAT_VERSIONS = frozenset({0, 1, 2, 3})
 
 _LEGACY_PAYLOAD_VERBS = frozenset({"explore", "choice", "combat"})
 _V1_PAYLOAD_VERBS = _LEGACY_PAYLOAD_VERBS | frozenset({"move-to", "focus:set"})
 _V1_EXACT_VERBS = frozenset({"focus:clear", "depart"})
 _V2_EXACT_VERBS = _V1_EXACT_VERBS | frozenset({"observe", "inspect"})
 _V2_LOD_UNLOCK_VERB = "lod-unlock"
+_V3_MOVE_PLAYER_VERB = "move-player-to"
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,18 @@ def _validate_lod_unlock_payload(payload: str) -> None:
     cap = int(cap_text)
     if str(cap) != cap_text:
         raise ValueError("lod-unlock cap must use canonical decimal form")
+
+
+def _validate_move_player_payload(payload: str) -> None:
+    if payload.count(",") != 1:
+        raise ValueError("move-player-to payload must contain exactly one comma")
+    for coordinate in payload.split(","):
+        digits = coordinate[1:] if coordinate.startswith("-") else coordinate
+        if not digits or not digits.isascii() or not digits.isdecimal():
+            raise ValueError("movement coordinate must be a canonical integer")
+        value = int(coordinate)
+        if str(value) != coordinate:
+            raise ValueError("movement coordinate must use canonical integer form")
 
 
 def record_format_version(record: dict) -> int:
@@ -59,16 +72,21 @@ def serialize_record_token(
     exact_verbs = (
         frozenset()
         if format_version == 0
-        else (_V2_EXACT_VERBS if format_version == 2 else _V1_EXACT_VERBS)
+        else (_V2_EXACT_VERBS if format_version >= 2 else _V1_EXACT_VERBS)
     )
     if verb in exact_verbs:
         if payload is not None:
             raise ValueError(f"record token {verb!r} does not accept a payload")
         return verb
-    if format_version == 2 and verb == _V2_LOD_UNLOCK_VERB:
+    if format_version >= 2 and verb == _V2_LOD_UNLOCK_VERB:
         if not isinstance(payload, str) or not payload:
             raise ValueError("record token 'lod-unlock' requires a non-empty payload")
         _validate_lod_unlock_payload(payload)
+        return f"{verb}:{payload}"
+    if format_version == 3 and verb == _V3_MOVE_PLAYER_VERB:
+        if not isinstance(payload, str) or not payload:
+            raise ValueError("record token 'move-player-to' requires a payload")
+        _validate_move_player_payload(payload)
         return f"{verb}:{payload}"
     if verb not in payload_verbs:
         raise ValueError(f"unknown record token verb: {verb!r}")
@@ -85,13 +103,17 @@ def parse_record_token(token: str, *, format_version: int) -> ParsedRecordToken:
         raise ValueError(f"unsupported record format_version: {format_version!r}")
     if not isinstance(token, str):
         raise ValueError(f"record token must be str, got {type(token).__name__}")
-    exact_verbs = _V2_EXACT_VERBS if format_version == 2 else _V1_EXACT_VERBS
+    exact_verbs = _V2_EXACT_VERBS if format_version >= 2 else _V1_EXACT_VERBS
     if format_version >= 1 and token in exact_verbs:
         return ParsedRecordToken(token, None)
-    if format_version == 2 and token.startswith(_V2_LOD_UNLOCK_VERB + ":"):
+    if format_version >= 2 and token.startswith(_V2_LOD_UNLOCK_VERB + ":"):
         payload = token[len(_V2_LOD_UNLOCK_VERB) + 1:]
         _validate_lod_unlock_payload(payload)
         return ParsedRecordToken(_V2_LOD_UNLOCK_VERB, payload)
+    if format_version == 3 and token.startswith(_V3_MOVE_PLAYER_VERB + ":"):
+        payload = token[len(_V3_MOVE_PLAYER_VERB) + 1:]
+        _validate_move_player_payload(payload)
+        return ParsedRecordToken(_V3_MOVE_PLAYER_VERB, payload)
     payload_verbs = (_LEGACY_PAYLOAD_VERBS if format_version == 0 else _V1_PAYLOAD_VERBS)
     for verb in sorted(payload_verbs, key=len, reverse=True):
         prefix = verb + ":"

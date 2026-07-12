@@ -104,6 +104,7 @@ def test_render_screen_stays_within_terminal_bounds():
     assert len(lines) <= 20
     assert all(display_width(line) <= 60 for line in lines)
     assert "observe" in screen and "inspect" in screen
+    assert "step" in screen
     assert "村の広場" in screen
     assert "HP 20/20" in screen
     assert "目的:" in screen

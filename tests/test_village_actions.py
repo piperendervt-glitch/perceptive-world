@@ -8,7 +8,7 @@ import pytest
 from trpg_core.input_actions import (
     ApplyLodUnlockAction, ClearFocusAction, DepartAction, ExploreAction,
     InspectFocusedObjectAction, MoveToLocationAction, ObserveFocusedObjectAction,
-    SetFocusAction,
+    MovePlayerToPositionAction, SetFocusAction,
 )
 from trpg_core.map import build_map
 from trpg_core.record import RecordingController
@@ -139,6 +139,39 @@ def test_recording_controller_does_not_commit_rejected_village_event():
     with pytest.raises(ValueError, match="focused_object_id"):
         _apply_village_action(state, game_map, [], event)
     assert recorder.inputs == []
+
+
+def test_recording_commits_only_accepted_resolved_spatial_destination():
+    state, game_map = _setup()
+    state.transition_location("well")
+    game_map.current = "well"
+    accepted = MovePlayerToPositionAction(PlayerPosition(2, 2))
+    blocked = MovePlayerToPositionAction(PlayerPosition(3, 2))
+
+    class Base:
+        def __init__(self, event):
+            self.event = event
+        def village_action(self, context, **display):
+            return self.event
+
+    recorder = RecordingController(Base(accepted), state.scenario)
+    event = recorder.village_action(_village_context(state, game_map, []))
+    assert recorder.inputs == []
+    assert not _apply_village_action(state, game_map, [], event)
+    recorder.village_event_applied(event)
+    assert recorder.inputs == ["move-player-to:2,2"]
+
+    rejected = RecordingController(Base(blocked), state.scenario)
+    event = rejected.village_action(_village_context(state, game_map, []))
+    with pytest.raises(ValueError):
+        _apply_village_action(state, game_map, [], event)
+    assert rejected.inputs == []
+    rejected.village_event_rejected(event, ValueError("blocked"))
+    rejected.base.event = MovePlayerToPositionAction(PlayerPosition(2, 1))
+    retry = rejected.village_action(_village_context(state, game_map, []))
+    assert not _apply_village_action(state, game_map, [], retry)
+    rejected.village_event_applied(retry)
+    assert rejected.inputs == ["move-player-to:2,1"]
 
 
 def test_fixture_controller_v1_restores_one_event_at_a_time_without_state_changes():

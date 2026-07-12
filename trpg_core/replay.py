@@ -34,8 +34,9 @@ from collections import deque
 from .input_actions import (
     ApplyLodUnlockAction, ClearFocusAction, DepartAction, ExploreAction,
     InspectFocusedObjectAction, MoveToLocationAction, ObserveFocusedObjectAction,
-    SetFocusAction,
+    MovePlayerToPositionAction, SetFocusAction,
 )
+from .spatial import PlayerPosition
 from .lod import derive_current_lod
 from .lod_actions import LodRuntimeState
 from .lod_content import lod_content_for_world_object
@@ -140,6 +141,9 @@ class FixtureController:
         self.q.popleft()
         if parsed.verb == "move-to":
             event = MoveToLocationAction(parse_world_object_id(parsed.payload))
+        elif parsed.verb == "move-player-to":
+            x, y = parsed.payload.split(",")
+            event = MovePlayerToPositionAction(PlayerPosition(int(x), int(y)))
         elif parsed.verb == "focus:set":
             event = SetFocusAction(parse_world_object_id(parsed.payload))
         elif parsed.verb == "focus:clear":
@@ -249,7 +253,7 @@ class FixtureController:
 
 def _run(
     scenario_id: str, seed: int, inputs, respawn=False, *, format_version=0,
-    collect_focus_trace=False, collect_lod_trace=False,
+    collect_focus_trace=False, collect_lod_trace=False, collect_position_trace=False,
 ):
     from .session import GameState, run_session
     from .scenario_loader import load_scenario
@@ -258,28 +262,32 @@ def _run(
     controller = FixtureController(inputs, state.scenario, format_version=format_version)
     focus_trace = [] if collect_focus_trace else None
     lod_trace = [] if collect_lod_trace else None
+    position_trace = [] if collect_position_trace else None
 
     def observe(action, authoritative_focus):
         if focus_trace is not None and isinstance(action, (SetFocusAction, ClearFocusAction)):
             focus_trace.append(authoritative_focus)
         if lod_trace is not None:
             lod_trace.append(lod_runtime_trace_entry(state.lod_runtime))
+        if position_trace is not None:
+            position_trace.append(position_trace_entry(state.player_position))
 
     run_session(
         state, controller,
         on_village_event_applied=(
-            observe if focus_trace is not None or lod_trace is not None else None
+            observe if (focus_trace is not None or lod_trace is not None
+                        or position_trace is not None) else None
         ),
     )
     controller.assert_all_events_consumed()
-    return state, focus_trace, lod_trace
+    return state, focus_trace, lod_trace, position_trace
 
 
 def expected_focus_trace(fixture: dict, *, format_version: int):
     if "expected_focus_trace" not in fixture:
         return None
-    if format_version not in {1, 2}:
-        raise ValueError("expected_focus_trace is supported only for format_version 1 or 2")
+    if format_version not in {1, 2, 3}:
+        raise ValueError("expected_focus_trace is supported only for format_version 1, 2 or 3")
     raw = fixture["expected_focus_trace"]
     if not isinstance(raw, list):
         raise ValueError("expected_focus_trace must be an array")
@@ -346,8 +354,8 @@ def serialize_lod_trace(trace) -> list[list[dict]]:
 def expected_lod_trace(fixture: dict, *, format_version: int):
     if "expected_lod_trace" not in fixture:
         return None
-    if format_version != 2:
-        raise ValueError("expected_lod_trace is supported only for format_version 2")
+    if format_version not in {2, 3}:
+        raise ValueError("expected_lod_trace is supported only for format_version 2 or 3")
     raw = fixture["expected_lod_trace"]
     if not isinstance(raw, list):
         raise ValueError("expected_lod_trace must be an array")
@@ -386,6 +394,47 @@ def assert_lod_trace_matches(expected, actual):
         )
 
 
+def position_trace_entry(position: PlayerPosition | None):
+    if position is None:
+        return None
+    if type(position) is not PlayerPosition:
+        raise ValueError("position trace requires PlayerPosition or None")
+    return (position.x, position.y)
+
+
+def serialize_position_trace(trace):
+    return [None if entry is None else {"x": entry[0], "y": entry[1]} for entry in trace]
+
+
+def expected_position_trace(fixture: dict, *, format_version: int):
+    if "expected_position_trace" not in fixture:
+        return None
+    if format_version != 3:
+        raise ValueError("expected_position_trace is supported only for format_version 3")
+    raw = fixture["expected_position_trace"]
+    if type(raw) is not list:
+        raise ValueError("expected_position_trace must be an array")
+    result = []
+    for index, value in enumerate(raw):
+        if value is None:
+            result.append(None)
+        elif type(value) is dict and set(value) == {"x", "y"}:
+            if type(value["x"]) is not int or type(value["y"]) is not int:
+                raise ValueError(f"expected_position_trace[{index}] coordinates must be ints")
+            result.append((value["x"], value["y"]))
+        else:
+            raise ValueError(f"expected_position_trace[{index}] must be x/y or null")
+    return tuple(result)
+
+
+def assert_position_trace_matches(expected, actual):
+    if tuple(expected) != tuple(actual):
+        raise ValueError(
+            "expected_position_trace mismatch: "
+            f"expected_count={len(expected)}, actual_count={len(actual)}"
+        )
+
+
 def compare_logs(expected: list, actual: list):
     """完全一致なら None。違えば (index, expected_event, actual_event) を返す。"""
     n = min(len(expected), len(actual))
@@ -409,11 +458,13 @@ def replay_fixture(fixture: dict, mode: str = "full"):
     version = record_format_version(fixture)
     expected_trace = expected_focus_trace(fixture, format_version=version)
     expected_lod = expected_lod_trace(fixture, format_version=version)
-    state, actual_trace, actual_lod = _run(
+    expected_position = expected_position_trace(fixture, format_version=version)
+    state, actual_trace, actual_lod, actual_position = _run(
         fixture["scenario"], fixture["seed"], fixture["inputs"],
         respawn=bool(fixture.get("respawn", False)), format_version=version,
         collect_focus_trace=expected_trace is not None,
         collect_lod_trace=expected_lod is not None,
+        collect_position_trace=expected_position is not None,
     )
     actual = state.log
     expected = fixture["expected_log"]
@@ -425,6 +476,8 @@ def replay_fixture(fixture: dict, mode: str = "full"):
         assert_focus_trace_matches(expected_trace, actual_trace)
     if diff is None and expected_lod is not None:
         assert_lod_trace_matches(expected_lod, actual_lod)
+    if diff is None and expected_position is not None:
+        assert_position_trace_matches(expected_position, actual_position)
     return (diff is None, state.log, diff)
 
 

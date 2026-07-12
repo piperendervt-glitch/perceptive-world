@@ -64,7 +64,7 @@ def test_spatial_action_is_frozen_strict_and_not_a_village_event():
     village_types = set()
     for member in typing.get_args(VillageControllerEvent):
         village_types.update(typing.get_args(member) or (member,))
-    assert MovePlayerToPositionAction not in village_types
+    assert MovePlayerToPositionAction in village_types
 
 
 def test_canonical_lod_actions_are_frozen_and_part_of_village_events():

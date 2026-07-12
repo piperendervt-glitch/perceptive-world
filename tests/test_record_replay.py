@@ -8,8 +8,11 @@ import pytest
 from trpg_core.record import fixture_from_inputs
 from trpg_core.replay import (
     FixtureController, assert_focus_trace_matches, assert_lod_trace_matches,
-    expected_focus_trace, expected_lod_trace, load_fixture, replay_fixture,
+    assert_position_trace_matches, expected_focus_trace, expected_lod_trace,
+    expected_position_trace, load_fixture, replay_fixture,
 )
+from trpg_core.input_actions import MovePlayerToPositionAction
+from trpg_core.spatial import PlayerPosition
 from trpg_core.world import WorldObjectId
 from trpg_core.scenario_loader import load_scenario
 
@@ -22,9 +25,9 @@ LEGACY_INPUTS = [
 ]
 
 
-def test_new_fixture_is_v2_and_canonicalizes_choice_labels():
+def test_new_fixture_is_v3_and_canonicalizes_choice_labels():
     fixture = fixture_from_inputs("envoy", 0, LEGACY_INPUTS, respawn=True)
-    assert fixture["format_version"] == 2
+    assert fixture["format_version"] == 3
     assert fixture["scenario"] == "envoy"
     assert fixture["seed"] == 0
     assert "explore:rapport" in fixture["inputs"]
@@ -38,6 +41,39 @@ def test_new_fixture_is_v2_and_canonicalizes_choice_labels():
     assert ok, diff
     assert actual == fixture["expected_log"]
     assert fixture["respawn"] is True
+    assert len(fixture["expected_position_trace"]) == len(fixture["expected_lod_trace"])
+
+
+def test_fixture_controller_v3_restores_resolved_movement_action():
+    controller = FixtureController(
+        ["move-player-to:2,2"], load_scenario("goblin"), format_version=3,
+    )
+    action = controller.village_action(None)
+    assert action == MovePlayerToPositionAction(PlayerPosition(2, 2))
+    controller.assert_all_events_consumed()
+
+
+@pytest.mark.parametrize("value", [
+    {}, [True], [{"x": 1}], [{"x": 1, "y": 2, "z": 3}],
+    [{"x": True, "y": 2}], [{"x": 1.0, "y": 2}],
+])
+def test_expected_position_trace_rejects_malformed_values(value):
+    with pytest.raises(ValueError, match="expected_position_trace"):
+        expected_position_trace(
+            {"expected_position_trace": value}, format_version=3,
+        )
+
+
+def test_expected_position_trace_is_optional_v3_and_exact():
+    assert expected_position_trace({}, format_version=3) is None
+    expected = expected_position_trace(
+        {"expected_position_trace": [{"x": 1, "y": 2}, None]},
+        format_version=3,
+    )
+    assert expected == ((1, 2), None)
+    assert_position_trace_matches(expected, ((1, 2), None))
+    with pytest.raises(ValueError, match="mismatch"):
+        assert_position_trace_matches(expected, ((1, 2),))
 
 
 @pytest.mark.parametrize("value", [

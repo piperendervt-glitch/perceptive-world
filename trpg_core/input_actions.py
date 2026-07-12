@@ -143,7 +143,7 @@ LodCanonicalAction: TypeAlias = (
 
 
 VillageControllerEvent: TypeAlias = (
-    MoveToLocationAction | ExploreAction | DepartAction
+    MoveToLocationAction | MovePlayerToPositionAction | ExploreAction | DepartAction
     | SetFocusAction | ClearFocusAction
     | LodCanonicalAction
 )

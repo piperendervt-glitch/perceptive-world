@@ -11,16 +11,37 @@ from trpg_core.record_codec import (
 
 
 @pytest.mark.parametrize("record, expected", [
-    ({}, 0), ({"format_version": 0}, 0), ({"format_version": 1}, 1), ({"format_version": 2}, 2),
+    ({}, 0), ({"format_version": 0}, 0), ({"format_version": 1}, 1), ({"format_version": 2}, 2), ({"format_version": 3}, 3),
 ])
 def test_record_format_version(record, expected):
     assert record_format_version(record) == expected
 
 
-@pytest.mark.parametrize("value", [True, False, "1", 1.0, -1, 3, None])
+@pytest.mark.parametrize("value", [True, False, "1", 1.0, -1, 4, None])
 def test_record_format_version_rejects_invalid_values(value):
     with pytest.raises(ValueError, match="format_version"):
         record_format_version({"format_version": value})
+
+
+@pytest.mark.parametrize("payload", ["2,2", "0,0", "-1,2", "12,-34"])
+def test_v3_movement_token_round_trip_is_canonical(payload):
+    token = serialize_record_token("move-player-to", payload, format_version=3)
+    assert token == f"move-player-to:{payload}"
+    assert parse_record_token(token, format_version=3) == ParsedRecordToken(
+        "move-player-to", payload,
+    )
+    for old in (0, 1, 2):
+        with pytest.raises(ValueError):
+            parse_record_token(token, format_version=old)
+
+
+@pytest.mark.parametrize("payload", [
+    "", "1", "1,", ",1", "1,2,3", " 1,2", "1,2 ", "+1,2",
+    "01,2", "-0,2", "1.0,2", "x,2",
+])
+def test_v3_movement_token_rejects_noncanonical_payload(payload):
+    with pytest.raises(ValueError):
+        serialize_record_token("move-player-to", payload, format_version=3)
 
 
 @pytest.mark.parametrize("verb,payload", [

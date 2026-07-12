@@ -30,6 +30,7 @@ from .input_actions import (
     ExploreAction,
     InspectFocusedObjectAction,
     MetaRequest,
+    MovePlayerToPositionAction,
     MoveToLocationAction,
     ObserveFocusedObjectAction,
     SelectMenuIndex,
@@ -61,6 +62,8 @@ from .lod_actions import LodRuntimeState, ObjectLodProgress, apply_lod_action
 from .lod_content import lod_content_for_world_object
 from .spatial import PlayerPosition, can_player_occupy
 from .spatial_content import spatial_definition_for_scene
+from .spatial_actions import apply_player_movement
+from .spatial_input import movement_action_from_step, movement_step_for_line_command
 
 # Windows console default cp932 chokes on CJK output; force UTF-8（resolve.py と同流儀）。
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -516,6 +519,9 @@ def _apply_village_action(state, game_map, picked, action, *, legacy_batch=False
             scene_object_ids=scene_object_ids,
         )
         return False
+    if isinstance(action, MovePlayerToPositionAction):
+        apply_player_movement(state, action)
+        return False
     if isinstance(action, MoveToLocationAction):
         if game_map is None:
             raise ValueError("move requires an active map")
@@ -568,9 +574,18 @@ def _run_village(state: GameState, controller, *, on_village_event_applied=None)
         if action == RELOAD:
             game_map = build_map(sc, state.location or sc.map_start) if sc.has_map else None
             continue
-        departed = _apply_village_action(
-                state, game_map, picked, action,
-                legacy_batch=bool(getattr(controller, "legacy_village_batch", False)))
+        try:
+            departed = _apply_village_action(
+                    state, game_map, picked, action,
+                    legacy_batch=bool(getattr(controller, "legacy_village_batch", False)))
+        except ValueError as exc:
+            if hasattr(controller, "village_event_rejected"):
+                controller.village_event_rejected(action, exc)
+                continue
+            if hasattr(controller, "announce"):
+                controller.announce(str(exc))
+                continue
+            raise
         if hasattr(controller, "village_event_applied"):
             controller.village_event_applied(action)
         if on_village_event_applied is not None:
@@ -839,7 +854,8 @@ class ConsoleController:
             lines.append("load <名前> — 保存した状態を読込（例: load camp）")
         else:
             lines.append("load は戦闘外で使用する。")
-        lines.append("地図では go <方角> または方角単独も使用できる。")
+        lines.append("go <方角> — location間移動")
+        lines.append("step north|east|south|west — 現在scene内の1セル移動")
         return lines
 
     def _show_help(self, menu, include_load=True):
@@ -1044,6 +1060,12 @@ class ConsoleController:
                 self._message("中断する."); sys.exit(0)
             if meta == "handled":
                 continue
+            step = movement_step_for_line_command(original)
+            if step is not None:
+                if self.state.player_position is None:
+                    self._message("current scene has no player position")
+                    continue
+                return movement_action_from_step(self.state.player_position, step)
             if low == "observe":
                 return ObserveFocusedObjectAction()
             if low == "inspect":

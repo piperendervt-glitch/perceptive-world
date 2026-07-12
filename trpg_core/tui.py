@@ -306,7 +306,7 @@ def render_screen(model: ScreenModel, width: int, height: int) -> str:
     lines.append(sep)
     lines.extend(_row(line, inner) for line in menu_lines)
     lines.append(_row(
-        " [S][H][Q] focus next|prev|clear observe inspect",
+        " [S][H][Q] focus next|prev|clear observe inspect step north|east|south|west",
         inner,
     ))
     lines.append(bottom)
