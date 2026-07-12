@@ -9,6 +9,10 @@ from .input_actions import (
 from .presentation import SceneSpatialView, SpatialCellView
 from .spatial_input import movement_action_from_step, movement_step_for_keyboard_code
 
+HOVER_FOCUS_DELAY_MS = 400
+FIRST_OBSERVE_DELAY_MS = 700
+OBSERVE_INTERVAL_MS = 700
+
 
 @dataclass(frozen=True)
 class PixelRect:
@@ -213,6 +217,100 @@ class TwoDSessionModel:
         return self.snapshot
 
 
+class HoverDwellController:
+    """Client-only cancellable dwell policy; time never enters engine state."""
+
+    def __init__(self, *, schedule, cancel, dispatch, snapshot, active=lambda: True):
+        self.schedule = schedule
+        self.cancel_timer = cancel
+        self.dispatch = dispatch
+        self.snapshot = snapshot
+        self.active = active
+        self.hovered_object_id = None
+        self.generation = 0
+        self.pending_after_ids = []
+        self.focus_dispatched = False
+        self.observe_count = 0
+        self.dispatch_in_flight = False
+        self.scene_id = None
+        self.feedback = ""
+        self.closed = False
+
+    def _eligible(self, object_id):
+        snap = self.snapshot()
+        scene = snap.spatial_scene
+        return (scene is not None and snap.scene_id == self.scene_id and self.active()
+                and any(obj.object_id == object_id and obj.focus_candidate for obj in scene.objects))
+
+    def _schedule(self, delay, callback, generation, object_id):
+        timer_id = self.schedule(delay, lambda: callback(generation, object_id))
+        self.pending_after_ids.append(timer_id)
+
+    def enter(self, object_id):
+        if object_id == self.hovered_object_id and self._eligible(object_id):
+            return
+        self.leave()
+        if object_id is None:
+            return
+        snap = self.snapshot(); self.scene_id = snap.scene_id
+        if not self._eligible(object_id):
+            return
+        self.hovered_object_id = object_id
+        self.generation += 1
+        self.feedback = "観察中…"
+        self._schedule(HOVER_FOCUS_DELAY_MS, self._focus_due, self.generation, object_id)
+
+    def leave(self):
+        for timer_id in self.pending_after_ids:
+            self.cancel_timer(timer_id)
+        self.pending_after_ids.clear()
+        self.hovered_object_id = None
+        self.generation += 1
+        self.focus_dispatched = False
+        self.observe_count = 0
+
+    def _valid(self, generation, object_id):
+        return (not self.closed and generation == self.generation
+                and object_id == self.hovered_object_id
+                and not self.dispatch_in_flight and self._eligible(object_id))
+
+    def _focus_due(self, generation, object_id):
+        if not self._valid(generation, object_id): return
+        snap = self.snapshot()
+        serialized = f"{object_id.scenario_id}:{object_id.local_id}"
+        if snap.focused_object_id != serialized:
+            self.dispatch_in_flight = True
+            accepted = self.dispatch(SetFocusAction(object_id))
+            self.dispatch_in_flight = False
+            if not accepted:
+                self.feedback = "観察を開始できません"
+                self.leave(); return
+        self.focus_dispatched = True
+        self.feedback = "さらに目を凝らしています…"
+        self._schedule(FIRST_OBSERVE_DELAY_MS, self._observe_due, generation, object_id)
+
+    def _observe_due(self, generation, object_id):
+        if not self._valid(generation, object_id) or not self.focus_dispatched: return
+        view = self.snapshot().focused_object_lod
+        if view is None or not view.has_more_observable_detail:
+            self.feedback = "現在見える範囲を観察しました"
+            return
+        self.dispatch_in_flight = True
+        accepted = self.dispatch(ObserveFocusedObjectAction())
+        self.dispatch_in_flight = False
+        if not accepted:
+            self.feedback = "観察を続けられません"
+            self.leave(); return
+        self.observe_count += 1
+        self.feedback = "さらに目を凝らしています…"
+        if self._valid(generation, object_id):
+            self._schedule(OBSERVE_INTERVAL_MS, self._observe_due, generation, object_id)
+
+    def close(self):
+        self.closed = True
+        self.leave()
+
+
 def make_available_action_callback(model, index, redraw, refocus):
     """Bind one stable action index without Tk loop-variable late binding."""
     def callback():
@@ -239,6 +337,7 @@ def run_two_d_session(seed: int, scenario_id: str) -> None:
     canvas.pack(fill="both", expand=True)
     buttons = []
     current_layout = None
+    dwell = None
 
     def redraw(_event=None):
         nonlocal current_layout, buttons
@@ -265,6 +364,9 @@ def run_two_d_session(seed: int, scenario_id: str) -> None:
                 focused = model.snapshot.focused_object_id == f"{obj.object_id.scenario_id}:{obj.object_id.local_id}"
                 canvas.create_oval(rect.left+8, rect.top+8, rect.left+rect.width-8, rect.top+rect.height-8,
                                    fill="#b28b45", outline="#ffffff" if focused else "#403018", width=4 if focused else 2)
+                if dwell is not None and dwell.hovered_object_id == obj.object_id:
+                    canvas.create_rectangle(rect.left+3, rect.top+3, rect.left+rect.width-3, rect.top+rect.height-3,
+                                            outline="#8fd3ff", width=2)
             if scene.player_position is not None:
                 rect = pixel_rect_for_cell(current_layout, scene.player_position)
                 canvas.create_text(rect.left+rect.width//2, rect.top+rect.height//2, text="@", fill="white", font=("TkDefaultFont", 18, "bold"))
@@ -274,7 +376,7 @@ def run_two_d_session(seed: int, scenario_id: str) -> None:
         lod = "なし" if snap.focused_object_lod is None else str(snap.focused_object_lod.current_lod)
         panel_x = current_layout.side_panel_rect.left + 18
         canvas.create_text(panel_x, 18, anchor="nw", fill="white",
-                           text=f"Scene\n{snap.scene_title or 'なし'}\n\nPlayer\n{pos}\n\nFocus\n{focus}\n\nLOD\n{lod}\n\nObjective\n{snap.objective}\n\nFeedback\n{model.feedback}")
+                           text=f"Scene\n{snap.scene_title or 'なし'}\n\nPlayer\n{pos}\n\nFocus\n{focus}\n\nLOD\n{lod}\n\nObjective\n{snap.objective}\n\nFeedback\n{dwell.feedback if dwell is not None and dwell.feedback else model.feedback}")
         y = 320
         for index, (label, _action) in enumerate(model.available_actions):
             button = tk.Button(
@@ -286,30 +388,59 @@ def run_two_d_session(seed: int, scenario_id: str) -> None:
             )
             button.place(x=panel_x, y=y, width=max(140, current_layout.side_panel_rect.width-36), height=30)
             buttons.append(button); y += 34
-        for label, action in (("Observe", ObserveFocusedObjectAction()), ("Inspect", InspectFocusedObjectAction()), ("Clear Focus", ClearFocusAction())):
+        focused = snap.focused_object_id is not None
+        complete = snap.focused_object_lod is not None and not snap.focused_object_lod.has_more_observable_detail
+        for label, action, enabled in (("今すぐ観察する", ObserveFocusedObjectAction(), focused and not complete),
+                                       ("詳しく調べる", InspectFocusedObjectAction(), focused),
+                                       ("注目を解除", ClearFocusAction(), focused)):
             button = tk.Button(root, text=label, foreground="#111111", background="#f2f2f2",
+                               state="normal" if enabled else "disabled",
                                command=lambda a=action: (model.dispatch(a), redraw(), root.focus_force()))
             button.place(x=panel_x, y=y, width=max(140, current_layout.side_panel_rect.width-36), height=30); buttons.append(button); y += 34
         canvas.create_text(width//2, current_layout.controls_rect.top+current_layout.controls_rect.height//2,
-                           text="WASD / Arrows: Move | Click: Focus | O: Observe | I: Inspect | Q: Quit", fill="white")
+                           text="WASD / Arrows: Move | Click: Focus | O: Observe | I: Inspect | Q: Quit\n対象にカーソルを合わせ続けると、自動で詳しく観察します。", fill="white")
 
     def on_key(event):
         result = model.handle_key(event.keysym, event.char)
-        if result == "quit": root.destroy()
+        if result == "quit": dwell.close(); root.destroy()
         else: redraw(); root.focus_force()
 
     def on_click(event):
         if current_layout is not None: model.handle_click(current_layout, event.x, event.y)
         redraw(); root.focus_force()
 
+    def on_motion(event):
+        if current_layout is None or model.snapshot.spatial_scene is None:
+            dwell.leave(); redraw(); return
+        object_id = spatial_object_at_pixel(model.snapshot.spatial_scene, current_layout,
+                                            x=event.x, y=event.y)
+        dwell.enter(object_id)
+        redraw()
+
+    def dispatch_dwell(action):
+        accepted = model.dispatch(action)
+        redraw()
+        return accepted
+
+    dwell = HoverDwellController(
+        schedule=root.after, cancel=root.after_cancel, dispatch=dispatch_dwell,
+        snapshot=lambda: model.snapshot,
+        active=lambda: root.focus_displayof() is not None,
+    )
+
     root.bind("<Key>", on_key)
     canvas.bind("<Button-1>", on_click)
+    canvas.bind("<Motion>", on_motion)
+    canvas.bind("<Leave>", lambda _event: (dwell.leave(), redraw()))
+    root.bind("<FocusOut>", lambda _event: dwell.leave())
     def on_configure(event):
         if event.widget is root or event.widget is canvas:
             redraw()
 
     root.bind("<Configure>", on_configure)
     root.bind("q", on_key); root.bind("Q", on_key)
-    root.protocol("WM_DELETE_WINDOW", root.destroy)
+    def close_window():
+        dwell.close(); root.destroy()
+    root.protocol("WM_DELETE_WINDOW", close_window)
     root.update_idletasks(); redraw(); root.focus_force()
     root.mainloop()

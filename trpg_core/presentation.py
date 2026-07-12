@@ -49,6 +49,7 @@ class FocusedObjectLodView:
     object_id: WorldObjectId
     current_lod: int
     visible_facts: tuple[VisibleWorldFactView, ...]
+    has_more_observable_detail: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.object_id, WorldObjectId):
@@ -57,6 +58,8 @@ class FocusedObjectLodView:
             raise ValueError("current_lod must be a non-negative int")
         if type(self.visible_facts) is not tuple:
             raise ValueError("visible_facts must be a tuple")
+        if type(self.has_more_observable_detail) is not bool:
+            raise ValueError("has_more_observable_detail must be a bool")
         keys = set()
         for fact in self.visible_facts:
             if not isinstance(fact, VisibleWorldFactView):
@@ -110,6 +113,7 @@ def focused_object_lod_view(
         focused_object_id,
         current_lod,
         tuple(visible_world_fact_view(focused_object_id, fact) for fact in visible.facts),
+        current_lod < min(content.lod_spec.max_lod, progress.lod_state.unlocked_lod_cap),
     )
 
 

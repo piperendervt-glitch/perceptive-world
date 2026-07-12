@@ -7,7 +7,7 @@ from trpg_core.input_actions import (
 from trpg_core.presentation import SceneSpatialView, SpatialCellView, SpatialObjectView
 from trpg_core.spatial import PlayerPosition
 from trpg_core.two_d import (
-    TwoDClientAdapter, TwoDSessionModel, build_two_d_layout,
+    HoverDwellController, TwoDClientAdapter, TwoDSessionModel, build_two_d_layout,
     make_available_action_callback, normalized_keyboard_code, pixel_rect_for_cell,
 )
 from trpg_core.world import WorldObjectId
@@ -109,3 +109,64 @@ def test_no_position_and_rejected_actions_are_nonfatal_and_render_is_pure():
     assert model.snapshot_builds == builds
     assert model.handle_key("o", "o") == ObserveFocusedObjectAction()
     assert model.feedback and not model.closed
+
+
+class _Scheduler:
+    def __init__(self):
+        self.callbacks = {}; self.cancelled = set(); self.next_id = 0
+    def schedule(self, delay, callback):
+        self.next_id += 1; self.callbacks[self.next_id] = (delay, callback); return self.next_id
+    def cancel(self, timer_id): self.cancelled.add(timer_id)
+    def fire(self, timer_id):
+        if timer_id not in self.cancelled: self.callbacks[timer_id][1]()
+
+
+def _dwell_setup():
+    from trpg_core.scenario_loader import load_scenario
+    from trpg_core.session import GameState
+    state = GameState(7, scenario=load_scenario("goblin")); state.transition_location("well")
+    model = TwoDSessionModel(state); scheduler = _Scheduler(); actions = []
+    def dispatch(action):
+        actions.append(action); return model.dispatch(action)
+    dwell = HoverDwellController(schedule=scheduler.schedule, cancel=scheduler.cancel,
+                                 dispatch=dispatch, snapshot=lambda: model.snapshot)
+    return model, scheduler, actions, dwell, model.snapshot.spatial_scene.objects[0].object_id
+
+
+def test_dwell_focus_observe_intervals_and_completion_use_canonical_actions():
+    model, scheduler, actions, dwell, object_id = _dwell_setup()
+    dwell.enter(object_id)
+    assert actions == []
+    focus_timer = dwell.pending_after_ids[-1]; scheduler.fire(focus_timer)
+    assert actions == [SetFocusAction(object_id)]
+    observe_timer = dwell.pending_after_ids[-1]; scheduler.fire(observe_timer)
+    assert actions[-1] == ObserveFocusedObjectAction()
+    for _ in range(5):
+        scheduler.fire(dwell.pending_after_ids[-1])
+    assert model.snapshot.focused_object_lod.current_lod == 3
+    count = len(actions); scheduler.fire(dwell.pending_after_ids[-1])
+    assert len(actions) == count
+    assert "観察" in dwell.feedback
+
+
+def test_dwell_cancel_generation_object_change_rejection_and_close_are_safe():
+    model, scheduler, actions, dwell, object_id = _dwell_setup()
+    dwell.enter(object_id); stale = dwell.pending_after_ids[-1]
+    dwell.leave(); scheduler.fire(stale)
+    assert actions == []
+    dwell.enter(object_id); stale = dwell.pending_after_ids[-1]
+    model.game_map.current = "plaza"; model.state.transition_location("plaza")
+    model.snapshot = model._build_snapshot(); scheduler.fire(stale)
+    assert actions == []
+    dwell.close()
+    assert dwell.closed and dwell.hovered_object_id is None
+
+
+def test_same_focused_target_skips_duplicate_focus_and_redraw_does_not_reset():
+    model, scheduler, actions, dwell, object_id = _dwell_setup()
+    assert model.dispatch(SetFocusAction(object_id))
+    dwell.enter(object_id); generation = dwell.generation
+    model.redraw_only(); dwell.enter(object_id)
+    assert dwell.generation == generation
+    scheduler.fire(dwell.pending_after_ids[-1])
+    assert SetFocusAction(object_id) not in actions

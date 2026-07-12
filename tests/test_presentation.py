@@ -244,7 +244,10 @@ def test_non_map_scene_has_no_world_objects_and_dangling_focus_is_rejected():
 def test_lod_presentation_views_are_strict_frozen_and_minimal():
     fact = VisibleWorldFactView("shape", "well_like", "井戸らしき形")
     view = FocusedObjectLodView(WorldObjectId("goblin", "location/well"), 0, (fact,))
-    assert set(view.__dict__) == {"object_id", "current_lod", "visible_facts"}
+    assert set(view.__dict__) == {
+        "object_id", "current_lod", "visible_facts", "has_more_observable_detail",
+    }
+    assert view.has_more_observable_detail is False
     assert set(fact.__dict__) == {"key", "value", "label"}
     with pytest.raises(dataclasses.FrozenInstanceError):
         fact.label = "changed"
