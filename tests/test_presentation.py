@@ -355,6 +355,21 @@ def test_well_visual_asset_key_uses_authoritative_lod_without_mutation(attention
     assert visual_asset_key_for_object(WorldObjectId("goblin", "location/plaza"), runtime) is None
 
 
+@pytest.mark.parametrize("scene", ["shrine", "lookout", "herbhut", "elderhouse"])
+@pytest.mark.parametrize("attention,cap,lod", [
+    (0, 3, 0), (1, 3, 1), (3, 3, 2), (6, 3, 3), (6, 1, 1),
+])
+def test_village_visual_asset_keys_follow_authoritative_lod(scene, attention, cap, lod):
+    object_id = WorldObjectId("goblin", f"location/{scene}")
+    runtime = LodRuntimeState((ObjectLodProgress(
+        object_id, ObjectAttentionState(attention), ObjectLodState(cap),
+    ),))
+    before = copy.deepcopy(runtime)
+    assert visual_asset_key_for_object(object_id, runtime) == f"goblin/{scene}/lod{lod}"
+    assert runtime == before
+    assert visual_asset_key_for_object(object_id, LodRuntimeState()) == f"goblin/{scene}/lod0"
+
+
 def test_well_snapshot_exposes_neutral_spatial_view_without_mutation():
     import copy
     from trpg_core.map import build_map

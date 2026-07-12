@@ -67,6 +67,9 @@ def test_dwell_focus_builds_safe_lod_snapshot_for_village_objects(scene, name):
     focused = model.snapshot.focused_object_lod
     assert focused.current_lod == 0
     assert tuple(fact.key for fact in focused.visible_facts) == ("shape",)
+    assert target.visual_asset_key == f"goblin/{scene}/lod0"
+    assert model.handle_key("o", "o") == ObserveFocusedObjectAction()
+    assert model.snapshot.spatial_scene.objects[0].visual_asset_key == f"goblin/{scene}/lod1"
     assert all(fact.label and str(target.object_id) not in fact.label
                for fact in focused.visible_facts)
 

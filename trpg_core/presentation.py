@@ -245,14 +245,21 @@ def visual_asset_key_for_object(object_id: WorldObjectId, lod_runtime: LodRuntim
         raise ValueError("object_id must be a WorldObjectId")
     if lod_runtime is not None and not isinstance(lod_runtime, LodRuntimeState):
         raise ValueError("lod_runtime must be a LodRuntimeState or None")
-    if object_id != WorldObjectId("goblin", "location/well"):
+    asset_name = {
+        WorldObjectId("goblin", "location/well"): "well",
+        WorldObjectId("goblin", "location/shrine"): "shrine",
+        WorldObjectId("goblin", "location/lookout"): "lookout",
+        WorldObjectId("goblin", "location/herbhut"): "herbhut",
+        WorldObjectId("goblin", "location/elderhouse"): "elderhouse",
+    }.get(object_id)
+    if asset_name is None:
         return None
     content = lod_content_for_world_object(object_id)
     progress = None if lod_runtime is None else lod_progress_for_world_object(lod_runtime, object_id)
     if progress is None:
         progress = initial_lod_progress(content)
     lod = derive_current_lod(content.lod_spec, progress.attention, progress.lod_state)
-    return f"goblin/well/lod{lod}"
+    return f"goblin/{asset_name}/lod{lod}"
 
 
 _LANDMARK_GLYPHS = {

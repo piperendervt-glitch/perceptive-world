@@ -6,7 +6,10 @@ from types import MappingProxyType
 
 ASSET_ROOT = Path(__file__).resolve().parent / "assets" / "two_d"
 _ASSET_PATHS = MappingProxyType({
-    f"goblin/well/lod{lod}": Path("goblin") / "well" / f"lod{lod}.png"
+    f"goblin/{object_name}/lod{lod}": (
+        Path("goblin") / object_name / f"lod{lod}.png"
+    )
+    for object_name in ("well", "shrine", "lookout", "herbhut", "elderhouse")
     for lod in range(4)
 })
 ASSET_KEYS = tuple(_ASSET_PATHS)

@@ -8,22 +8,47 @@ from trpg_core.two_d_assets import (
 
 
 def test_manifest_is_closed_relative_and_complete():
-    assert ASSET_KEYS == tuple(f"goblin/well/lod{i}" for i in range(4))
+    objects = ("well", "shrine", "lookout", "herbhut", "elderhouse")
+    assert ASSET_KEYS == tuple(
+        f"goblin/{name}/lod{i}" for name in objects for i in range(4)
+    )
     paths = [relative_asset_path_for_key(key) for key in ASSET_KEYS]
     assert all(path is not None and not path.is_absolute() for path in paths)
     assert relative_asset_path_for_key("goblin/well") is None
     assert relative_asset_path_for_key("../well/lod0") is None
     assert relative_asset_path_for_key("/tmp/lod0") is None
+    assert relative_asset_path_for_key("goblin/shrine/lod4") is None
+    assert relative_asset_path_for_key("goblin/shrine/lod") is None
+    assert relative_asset_path_for_key("goblin/shrine/lod0/extra") is None
+    assert all((ASSET_ROOT / path).is_file() for path in paths)
 
 
 def test_png_assets_are_same_size_distinct_and_reasonable():
-    hashes = set(); dimensions = set()
+    hashes = {}; dimensions = set()
     for key in ASSET_KEYS:
         data = (ASSET_ROOT / relative_asset_path_for_key(key)).read_bytes()
         assert data.startswith(b"\x89PNG\r\n\x1a\n") and 100 < len(data) < 20000
         dimensions.add(struct.unpack(">II", data[16:24]))
-        hashes.add(hashlib.sha256(data).hexdigest())
-    assert dimensions == {(64, 64)} and len(hashes) == 4
+        hashes[key] = hashlib.sha256(data).hexdigest()
+    assert dimensions == {(64, 64)}
+    for name in ("well", "shrine", "lookout", "herbhut", "elderhouse"):
+        assert len({hashes[f"goblin/{name}/lod{i}"] for i in range(4)}) == 4
+
+
+def test_new_object_lod_details_are_progressive_and_lod3_is_visibly_distinct():
+    for name in ("shrine", "lookout", "herbhut", "elderhouse"):
+        levels = [_rgba_pixels(
+            ASSET_ROOT / relative_asset_path_for_key(f"goblin/{name}/lod{lod}")
+        ) for lod in range(4)]
+        opaque = [sum(pixel[3] > 0 for row in image for pixel in row) for image in levels]
+        assert opaque == sorted(opaque)
+        for lower, higher in zip(levels, levels[1:]):
+            changed = sum(lower[y][x] != higher[y][x]
+                          for y in range(64) for x in range(64))
+            assert changed >= 12
+        lod23 = sum(levels[2][y][x] != levels[3][y][x]
+                    for y in range(64) for x in range(64))
+        assert lod23 >= 30
 
 
 def _rgba_pixels(path):
