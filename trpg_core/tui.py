@@ -151,6 +151,7 @@ class ScreenModel:
     menu: list[tuple[str, str, str]] = field(default_factory=list)
     scene: str = ""
     recent: list[str] = field(default_factory=list)
+    lod_detail: str | None = None
 
 
 def render_local_cross_map(view: MapView) -> str:
@@ -228,6 +229,12 @@ def screen_model_from_snapshot(snapshot: RenderSnapshot) -> ScreenModel:
             raise ValueError("focused object is missing from world_objects")
         focus_label = focused.label
 
+    lod_detail = None
+    if snapshot.focused_object_lod is not None:
+        lod = snapshot.focused_object_lod
+        labels = " / ".join(fact.label for fact in lod.visible_facts)
+        lod_detail = f"観察 LOD {lod.current_lod}: {labels}"
+
     return ScreenModel(
         place=snapshot.scene_title or snapshot.scene_id or "",
         situation=situation,
@@ -238,6 +245,7 @@ def screen_model_from_snapshot(snapshot: RenderSnapshot) -> ScreenModel:
               for action in snapshot.actions if action.enabled],
         scene=scene,
         recent=_recent_lines(snapshot.recent_messages, 54, 8),
+        lod_detail=lod_detail,
     )
 
 
@@ -267,6 +275,19 @@ def render_screen(model: ScreenModel, width: int, height: int) -> str:
     recent_count = max(1, content_budget - scene_count)
     scene_lines = scene_lines[:scene_count]
     recent_lines = list(model.recent)[-recent_count:]
+    if model.lod_detail is not None:
+        detail_width = max(1, inner - 8)
+        detail_lines = []
+        for part in model.lod_detail.split(" / "):
+            candidate = f"{detail_lines[-1]} / {part}" if detail_lines else part
+            if detail_lines and display_width(candidate) > detail_width:
+                detail_lines.append(part)
+            elif detail_lines:
+                detail_lines[-1] = candidate
+            else:
+                detail_lines.extend(wrap_display(part, detail_width))
+        detail_lines = detail_lines[:recent_count]
+        recent_lines = detail_lines + recent_lines[-max(0, recent_count - len(detail_lines)):]
 
     lines = [
         top,

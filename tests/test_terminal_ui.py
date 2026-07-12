@@ -14,6 +14,7 @@ from trpg_core.combat import run_combat
 from trpg_core.map import build_map
 from trpg_core.map_view import render_map
 from trpg_core.presentation import (
+    FocusedObjectLodView, VisibleWorldFactView,
     ActionView,
     EnemyView,
     PlayerView,
@@ -24,6 +25,7 @@ from trpg_core.presentation import (
     build_map_view,
     build_render_snapshot,
 )
+from trpg_core.world import WorldObjectId
 from trpg_core.record import RecordingController
 from trpg_core.scenario_loader import load_scenario
 from trpg_core.session import ConsoleController, GameState
@@ -487,3 +489,37 @@ def test_non_tty_fallback_uses_same_session_input_resolver(monkeypatch):
     assert controller.choice(node.id, [c.key for c in node.choices]) == node.choices[0].key
     assert calls == ["01"]
     assert "menu表示へ切り替えます" in stream.getvalue()
+@pytest.mark.parametrize("lod, facts, present, absent", [
+    (0, (("shape", "well_like", "井戸らしき形"),),
+     ("井戸らしき形",), ("石造り", "古い", "新しい滑車", "擦り切れた縄", "消えかけた紋章")),
+    (1, (("shape", "well_like", "井戸らしき形"), ("material", "stone", "石造り"),
+         ("age", "old", "古い")),
+     ("井戸らしき形", "石造り", "古い"), ("新しい滑車", "擦り切れた縄", "消えかけた紋章")),
+    (2, (("shape", "well_like", "井戸らしき形"), ("material", "stone", "石造り"),
+         ("age", "old", "古い"), ("pulley", "recent", "新しい滑車"),
+         ("rope", "worn", "擦り切れた縄")),
+     ("新しい滑車", "擦り切れた縄"), ("消えかけた紋章",)),
+    (3, (("shape", "well_like", "井戸らしき形"), ("material", "stone", "石造り"),
+         ("age", "old", "古い"), ("pulley", "recent", "新しい滑車"),
+         ("rope", "worn", "擦り切れた縄"), ("mark", "faded_emblem", "消えかけた紋章")),
+     ("消えかけた紋章",), ()),
+])
+def test_tui_renders_only_visible_lod_labels_with_fixed_bounds(lod, facts, present, absent):
+    snapshot = RenderSnapshot(
+        scenario_id="goblin", scene_id="well", scene_kind="village",
+        scene_title="古井戸", scene_text="", turn=0, objective="調べる",
+        player=PlayerView(20, 20, 10, 10, "薬草", 0),
+        world_objects=(WorldObjectView("goblin:location/well", "location", "古井戸"),),
+        focused_object_id="goblin:location/well",
+        focused_object_lod=FocusedObjectLodView(
+            WorldObjectId("goblin", "location/well"), lod,
+            tuple(VisibleWorldFactView(*fact) for fact in facts),
+        ),
+    )
+    screen = render_screen(screen_model_from_snapshot(snapshot), 60, 20)
+    assert f"LOD {lod}" in screen
+    assert all(text in screen for text in present)
+    assert all(text not in screen for text in absent)
+    assert "goblin:location/well" not in screen
+    assert len(screen.splitlines()) <= 20
+    assert all(display_width(line) <= 60 for line in screen.splitlines())

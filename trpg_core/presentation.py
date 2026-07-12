@@ -10,11 +10,107 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
+from .lod import derive_current_lod
+from .lod_actions import (
+    LodRuntimeState,
+    initial_lod_progress,
+    lod_progress_for_world_object,
+)
+from .lod_content import lod_content_for_world_object, visible_facts_for_lod
 from .rules import modifier
 from .world import (
+    WorldFact,
+    WorldObjectId,
     serialize_world_object_id,
     world_objects_for_current_scene,
 )
+
+
+def _exact_text(value: object, field_name: str) -> str:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise ValueError(f"{field_name} must be a non-empty untrimmed string")
+    return value
+
+
+@dataclass(frozen=True)
+class VisibleWorldFactView:
+    key: str
+    value: str
+    label: str
+
+    def __post_init__(self) -> None:
+        _exact_text(self.key, "key")
+        _exact_text(self.value, "value")
+        _exact_text(self.label, "label")
+
+
+@dataclass(frozen=True)
+class FocusedObjectLodView:
+    object_id: WorldObjectId
+    current_lod: int
+    visible_facts: tuple[VisibleWorldFactView, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.object_id, WorldObjectId):
+            raise ValueError("object_id must be a WorldObjectId")
+        if type(self.current_lod) is not int or self.current_lod < 0:
+            raise ValueError("current_lod must be a non-negative int")
+        if type(self.visible_facts) is not tuple:
+            raise ValueError("visible_facts must be a tuple")
+        keys = set()
+        for fact in self.visible_facts:
+            if not isinstance(fact, VisibleWorldFactView):
+                raise ValueError("visible_facts must contain VisibleWorldFactView values")
+            if fact.key in keys:
+                raise ValueError(f"duplicate visible fact key: {fact.key}")
+            keys.add(fact.key)
+
+
+_GOBLIN_WELL_FACT_LABELS = (
+    ("shape", "well_like", "井戸らしき形"),
+    ("material", "stone", "石造り"),
+    ("age", "old", "古い"),
+    ("pulley", "recent", "新しい滑車"),
+    ("rope", "worn", "擦り切れた縄"),
+    ("mark", "faded_emblem", "消えかけた紋章"),
+)
+
+
+def visible_world_fact_view(object_id: WorldObjectId, fact: WorldFact) -> VisibleWorldFactView:
+    if not isinstance(object_id, WorldObjectId) or not isinstance(fact, WorldFact):
+        raise ValueError("exact WorldObjectId and WorldFact are required")
+    if object_id != WorldObjectId("goblin", "location/well"):
+        raise ValueError("no presentation label mapping for object")
+    label = next((label for key, value, label in _GOBLIN_WELL_FACT_LABELS
+                  if key == fact.key and value == fact.value), None)
+    if label is None:
+        raise ValueError("no exact presentation label mapping for fact")
+    return VisibleWorldFactView(fact.key, fact.value, label)
+
+
+def focused_object_lod_view(
+    *, focused_object_id: WorldObjectId | None,
+    lod_runtime: LodRuntimeState | None,
+) -> FocusedObjectLodView | None:
+    if focused_object_id is None or lod_runtime is None:
+        return None
+    if not isinstance(focused_object_id, WorldObjectId):
+        raise ValueError("focused_object_id must be a WorldObjectId or None")
+    if not isinstance(lod_runtime, LodRuntimeState):
+        raise ValueError("lod_runtime must be a LodRuntimeState or None")
+    content = lod_content_for_world_object(focused_object_id)
+    if content is None:
+        return None
+    progress = lod_progress_for_world_object(lod_runtime, focused_object_id)
+    if progress is None:
+        progress = initial_lod_progress(content)
+    current_lod = derive_current_lod(content.lod_spec, progress.attention, progress.lod_state)
+    visible = visible_facts_for_lod(content, current_lod)
+    return FocusedObjectLodView(
+        focused_object_id,
+        current_lod,
+        tuple(visible_world_fact_view(focused_object_id, fact) for fact in visible.facts),
+    )
 
 
 @dataclass(frozen=True)
@@ -139,6 +235,7 @@ class RenderSnapshot:
     ending: str | None = None
     world_objects: tuple[WorldObjectView, ...] = field(default_factory=tuple)
     focused_object_id: str | None = None
+    focused_object_lod: FocusedObjectLodView | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "actions", tuple(self.actions))
@@ -152,6 +249,7 @@ def build_render_snapshot(
     context: PresentationContext | None = None,
     *,
     active_game_map: Any | None = None,
+    lod_runtime: LodRuntimeState | None = None,
 ) -> RenderSnapshot:
     """GameState相当の値を読み、ゲーム状態を変更せず表示用コピーを返す。
 
@@ -221,6 +319,9 @@ def build_render_snapshot(
         ending=context.ending,
         world_objects=world_objects,
         focused_object_id=focused_object_id,
+        focused_object_lod=focused_object_lod_view(
+            focused_object_id=focused_id, lod_runtime=lod_runtime,
+        ),
     )
 
 

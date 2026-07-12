@@ -9,6 +9,8 @@ import pytest
 
 from trpg_core.map import build_map
 from trpg_core.presentation import (
+    FocusedObjectLodView,
+    VisibleWorldFactView,
     ActionView,
     AttributeView,
     EnemyView,
@@ -23,6 +25,10 @@ from trpg_core.presentation import (
     build_map_view,
     build_render_snapshot,
 )
+from trpg_core.lod import ObjectAttentionState, ObjectLodState
+from trpg_core.lod_actions import LodRuntimeState, ObjectLodProgress
+from trpg_core.world import WorldFact, WorldObjectId
+from trpg_core.presentation import focused_object_lod_view, visible_world_fact_view
 from trpg_core.scenario_loader import load_scenario
 from trpg_core.session import GameState
 from trpg_core.world import location_world_object_id
@@ -235,3 +241,67 @@ def test_non_map_scene_has_no_world_objects_and_dangling_focus_is_rejected():
     with pytest.raises(ValueError):
         build_render_snapshot(state, PresentationContext(scene_kind="decision"))
     assert (state.snapshot(), state.rng.state(), state.log, state.focus_state) == before
+def test_lod_presentation_views_are_strict_frozen_and_minimal():
+    fact = VisibleWorldFactView("shape", "well_like", "井戸らしき形")
+    view = FocusedObjectLodView(WorldObjectId("goblin", "location/well"), 0, (fact,))
+    assert set(view.__dict__) == {"object_id", "current_lod", "visible_facts"}
+    assert set(fact.__dict__) == {"key", "value", "label"}
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        fact.label = "changed"
+    for bad in ("", " x", "x ", 1, None):
+        with pytest.raises(ValueError):
+            VisibleWorldFactView(bad, "v", "label")
+    with pytest.raises(ValueError):
+        FocusedObjectLodView(view.object_id, True, ())
+    with pytest.raises(ValueError):
+        FocusedObjectLodView(view.object_id, 0, [fact])
+
+
+def test_exact_well_fact_label_mapping_rejects_fallbacks():
+    well = WorldObjectId("goblin", "location/well")
+    expected = (
+        ("shape", "well_like", "井戸らしき形"), ("material", "stone", "石造り"),
+        ("age", "old", "古い"), ("pulley", "recent", "新しい滑車"),
+        ("rope", "worn", "擦り切れた縄"),
+        ("mark", "faded_emblem", "消えかけた紋章"),
+    )
+    assert tuple(visible_world_fact_view(well, WorldFact(k, v)).label
+                 for k, v, _ in expected) == tuple(label for _, _, label in expected)
+    with pytest.raises(ValueError):
+        visible_world_fact_view(well, WorldFact("shape", "wrong"))
+    with pytest.raises(ValueError):
+        visible_world_fact_view(WorldObjectId("other", "location/well"),
+                                WorldFact("shape", "well_like"))
+
+
+@pytest.mark.parametrize("attention, cap, lod, keys", [
+    (0, 3, 0, ("shape",)),
+    (1, 3, 1, ("shape", "material", "age")),
+    (3, 3, 2, ("shape", "material", "age", "pulley", "rope")),
+    (6, 3, 3, ("shape", "material", "age", "pulley", "rope", "mark")),
+    (6, 1, 1, ("shape", "material", "age")),
+])
+def test_focused_lod_projection_exposes_only_current_visible_facts(attention, cap, lod, keys):
+    well = WorldObjectId("goblin", "location/well")
+    progress = ObjectLodProgress(well, ObjectAttentionState(attention), ObjectLodState(cap))
+    runtime = LodRuntimeState((progress,))
+    before = copy.deepcopy(runtime)
+    view = focused_object_lod_view(focused_object_id=well, lod_runtime=runtime)
+    assert view.current_lod == lod
+    assert tuple(f.key for f in view.visible_facts) == keys
+    assert runtime == before
+    assert not any(name in view.__dict__ for name in ("hidden", "attention", "cap"))
+
+
+def test_focused_lod_projection_is_opt_in_and_empty_runtime_is_read_only():
+    well = WorldObjectId("goblin", "location/well")
+    runtime = LodRuntimeState()
+    assert focused_object_lod_view(focused_object_id=None, lod_runtime=runtime) is None
+    assert focused_object_lod_view(focused_object_id=well, lod_runtime=None) is None
+    assert focused_object_lod_view(
+        focused_object_id=WorldObjectId("other", "location/well"), lod_runtime=runtime,
+    ) is None
+    view = focused_object_lod_view(focused_object_id=well, lod_runtime=runtime)
+    assert view.current_lod == 0
+    assert tuple(f.key for f in view.visible_facts) == ("shape",)
+    assert runtime == LodRuntimeState()
