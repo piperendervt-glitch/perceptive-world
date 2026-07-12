@@ -34,21 +34,27 @@ def _first_alive(enemies):
     return None
 
 
-def run_combat(state, node: str, controller, first_free_hit: bool = False) -> str:
-    """1 戦闘を最後まで回す。戻り値: "win" / "defeat" / "fled"。
+class CombatEncounter:
+    """Stateful wrapper around the existing deterministic combat round."""
 
-    敵編成はシナリオ（state.scenario）の当該ノードの encounter から組む。"""
-    sc = state.scenario
-    enemies = sc.make_group(sc.node(node).encounter)
-    state.emit(type="encounter", node=node, enemies=[e.key for e in enemies])
-    free_hit = first_free_hit
+    def __init__(self, state, node: str, first_free_hit: bool = False):
+        self.state = state
+        self.node = node
+        self.enemies = state.scenario.make_group(
+            state.scenario.node(node).encounter,
+        )
+        self.free_hit = first_free_hit
+        state.emit(type="encounter", node=node, enemies=[
+            enemy.key for enemy in self.enemies
+        ])
 
-    while True:
+    def step(self, command: str) -> str | None:
+        state = self.state
+        enemies = self.enemies
         base = state.turn
         events: list[dict] = []
         outcome = None  # "win"/"defeat"/"fled"/None(継続)
-
-        cmd = controller.combat_command(state, enemies)
+        cmd = command
         # --- 合法化: MP 不足で magic は選べない(I-2/C-11.1)、薬草切れで herb は選べない ---
         if cmd == "magic" and state.mp < MP_COST:
             cmd = "attack"
@@ -84,8 +90,8 @@ def run_combat(state, node: str, controller, first_free_hit: bool = False) -> st
 
             hitmod = modifier(base_ability) + effect_hit_bonus(state, target.key)
 
-            if free_hit:
-                free_hit = False
+            if self.free_hit:
+                self.free_hit = False
                 events.append({"type": "check", "tag": "free_hit", "auto": True, "success": True})
                 hit, crit, fumble = True, False, False
             else:
@@ -142,11 +148,20 @@ def run_combat(state, node: str, controller, first_free_hit: bool = False) -> st
             state.emit(**ev)
 
         if outcome == "win":
-            state.emit(type="combat_win", node=node)
+            state.emit(type="combat_win", node=self.node)
             return "win"
         if outcome == "defeat":
-            state.emit(type="defeat", node=node)
+            state.emit(type="defeat", node=self.node)
             return "defeat"
         if outcome == "fled":
             return "fled"
-        # 継続: 次のラウンドへ
+        return None
+
+
+def run_combat(state, node: str, controller, first_free_hit: bool = False) -> str:
+    """1 戦闘を最後まで回す。戻り値: "win" / "defeat" / "fled"。"""
+    encounter = CombatEncounter(state, node, first_free_hit)
+    while True:
+        outcome = encounter.step(controller.combat_command(state, encounter.enemies))
+        if outcome is not None:
+            return outcome

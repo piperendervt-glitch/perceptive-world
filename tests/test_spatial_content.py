@@ -16,6 +16,7 @@ from trpg_core.spatial_content import (
     entry_spawn_from_scene,
     spatial_definition_for_scene,
     spatial_exit_at_cell,
+    legacy_spatial_definition_for_scene,
 )
 from trpg_core.world import WorldObjectId
 
@@ -26,7 +27,7 @@ def test_well_definition_is_exact_immutable_production_geometry():
     assert definition.spec.scene_id == "well"
     assert (definition.spec.bounds.width, definition.spec.bounds.height) == (7, 5)
     assert definition.player_spawn == PlayerPosition(1, 2)
-    assert len(definition.spec.walkable_cells) == 15
+    assert len(definition.spec.walkable_cells) == 17
     placement, = definition.spec.object_placements
     assert placement.object_id == WorldObjectId("goblin", "location/well")
     assert placement.position == ObjectPosition(3, 2)
@@ -46,8 +47,8 @@ def test_definition_has_only_domain_fields_and_strict_types():
     assert {field.name for field in dataclasses.fields(definition)} == {
         "spec", "player_spawn", "entry_spawns", "exits",
     }
-    assert definition.entry_spawns == ()
-    assert definition.exits == ()
+    assert len(definition.entry_spawns) == 2
+    assert len(definition.exits) == 2
     with pytest.raises(ValueError):
         SceneSpatialDefinition({}, PlayerPosition(1, 2))
     with pytest.raises(ValueError):
@@ -89,3 +90,8 @@ def test_spatial_content_has_no_renderer_metadata():
     definition = spatial_definition_for_scene("well")
     names = {field.name for field in dataclasses.fields(definition.spec)}
     assert not {"sprite", "color", "panel", "pixel", "renderer"} & names
+
+
+def test_legacy_lookup_remains_well_only():
+    assert legacy_spatial_definition_for_scene("goblin", "well") is not None
+    assert legacy_spatial_definition_for_scene("goblin", "plaza") is None

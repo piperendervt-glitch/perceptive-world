@@ -19,6 +19,11 @@ class Enemy:
     dmg_lo: int
     dmg_hi: int
     player_target: int  # プレイヤーがこの敵に当てるための目標値
+    hp_max: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.hp_max is None:
+            self.hp_max = self.hp
 
     @property
     def alive(self) -> bool:

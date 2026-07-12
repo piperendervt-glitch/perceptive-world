@@ -1,0 +1,775 @@
+{
+ "format_version": 4,
+ "scenario": "goblin",
+ "seed": 7,
+ "inputs": [
+  "move-player-to:3,1",
+  "move-to:goblin:location/well",
+  "focus:set:goblin:location/well",
+  "observe",
+  "inspect",
+  "observe",
+  "inspect",
+  "explore:well",
+  "move-to:goblin:location/lookout",
+  "explore:scout",
+  "move-to:goblin:location/well",
+  "move-to:goblin:location/plaza",
+  "move-to:goblin:location/herbhut",
+  "explore:herbs",
+  "move-to:goblin:location/plaza",
+  "move-to:goblin:location/elderhouse",
+  "move-to:goblin:location/forest_gate",
+  "depart",
+  "choice:road",
+  "combat:attack",
+  "choice:sneak",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack",
+  "combat:attack"
+ ],
+ "expected_log": [
+  {
+   "t": 0,
+   "type": "session_start",
+   "seed": 7
+  },
+  {
+   "t": 0,
+   "type": "explore",
+   "place": "well",
+   "gain": "錆びた短剣：物理ダメージ +2"
+  },
+  {
+   "t": 0,
+   "type": "explore",
+   "place": "scout",
+   "gain": "藪ルート自動成功 / 見張りへの初撃が必中"
+  },
+  {
+   "t": 0,
+   "type": "explore",
+   "place": "herbs",
+   "gain": "薬草 ×2（戦闘中に使用）"
+  },
+  {
+   "t": 1,
+   "type": "enter_node",
+   "node": "forest"
+  },
+  {
+   "t": 2,
+   "type": "choice",
+   "node": "forest",
+   "label": "街道を行く"
+  },
+  {
+   "t": 2,
+   "type": "enter_node",
+   "node": "cave_entrance"
+  },
+  {
+   "t": 2,
+   "type": "encounter",
+   "node": "cave_entrance",
+   "enemies": [
+    "sentry"
+   ]
+  },
+  {
+   "t": 4,
+   "type": "check",
+   "tag": "free_hit",
+   "auto": true,
+   "success": true
+  },
+  {
+   "t": 4,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "sentry",
+   "damage": 7,
+   "crit": false,
+   "enemy_hp": 0
+  },
+  {
+   "t": 4,
+   "type": "combat_win",
+   "node": "cave_entrance"
+  },
+  {
+   "t": 4,
+   "type": "enter_node",
+   "node": "cave_hall"
+  },
+  {
+   "t": 5,
+   "type": "choice",
+   "node": "cave_hall",
+   "label": "松明を消して忍ぶ【vit 判定 / 目標 8】"
+  },
+  {
+   "t": 5,
+   "type": "check",
+   "tag": "vit_check",
+   "dice": [
+    4,
+    3
+   ],
+   "sum": 7,
+   "modifier": 3,
+   "total": 10,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 5,
+   "type": "enter_node",
+   "node": "hall1"
+  },
+  {
+   "t": 5,
+   "type": "encounter",
+   "node": "hall1",
+   "enemies": [
+    "goblin"
+   ]
+  },
+  {
+   "t": 6,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    3,
+    2
+   ],
+   "sum": 5,
+   "modifier": 0,
+   "total": 5,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": false
+  },
+  {
+   "t": 6,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "goblin",
+   "damage": 0,
+   "fumble": false
+  },
+  {
+   "t": 6,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    4,
+    5
+   ],
+   "total": 9,
+   "hit": true,
+   "damage": 1,
+   "player_hp": 19
+  },
+  {
+   "t": 8,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    1,
+    5
+   ],
+   "sum": 6,
+   "modifier": 0,
+   "total": 6,
+   "target": 6,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 8,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "goblin",
+   "damage": 6,
+   "crit": false,
+   "enemy_hp": 0
+  },
+  {
+   "t": 8,
+   "type": "combat_win",
+   "node": "hall1"
+  },
+  {
+   "t": 8,
+   "type": "enter_node",
+   "node": "depths"
+  },
+  {
+   "t": 8,
+   "type": "encounter",
+   "node": "depths",
+   "enemies": [
+    "chief",
+    "goblin"
+   ]
+  },
+  {
+   "t": 9,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    2,
+    3
+   ],
+   "sum": 5,
+   "modifier": 0,
+   "total": 5,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": false
+  },
+  {
+   "t": 9,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "chief",
+   "damage": 0,
+   "fumble": false
+  },
+  {
+   "t": 9,
+   "type": "enemy_attack",
+   "enemy": "chief",
+   "dice": [
+    2,
+    4
+   ],
+   "total": 8,
+   "hit": true,
+   "damage": 3,
+   "player_hp": 16
+  },
+  {
+   "t": 9,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    6,
+    2
+   ],
+   "total": 8,
+   "hit": true,
+   "damage": 2,
+   "player_hp": 14
+  },
+  {
+   "t": 10,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    2,
+    1
+   ],
+   "sum": 3,
+   "modifier": 0,
+   "total": 3,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": false
+  },
+  {
+   "t": 10,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "chief",
+   "damage": 0,
+   "fumble": false
+  },
+  {
+   "t": 10,
+   "type": "enemy_attack",
+   "enemy": "chief",
+   "dice": [
+    1,
+    2
+   ],
+   "total": 5,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 14
+  },
+  {
+   "t": 10,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    4,
+    5
+   ],
+   "total": 9,
+   "hit": true,
+   "damage": 1,
+   "player_hp": 13
+  },
+  {
+   "t": 11,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    6,
+    4
+   ],
+   "sum": 10,
+   "modifier": 0,
+   "total": 10,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": true
+  },
+  {
+   "t": 11,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "chief",
+   "damage": 6,
+   "crit": false,
+   "enemy_hp": 12
+  },
+  {
+   "t": 11,
+   "type": "enemy_attack",
+   "enemy": "chief",
+   "dice": [
+    5,
+    6
+   ],
+   "total": 13,
+   "hit": true,
+   "damage": 4,
+   "player_hp": 9
+  },
+  {
+   "t": 11,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    6,
+    5
+   ],
+   "total": 11,
+   "hit": true,
+   "damage": 1,
+   "player_hp": 8
+  },
+  {
+   "t": 12,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    2,
+    3
+   ],
+   "sum": 5,
+   "modifier": 0,
+   "total": 5,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": false
+  },
+  {
+   "t": 12,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "chief",
+   "damage": 0,
+   "fumble": false
+  },
+  {
+   "t": 12,
+   "type": "enemy_attack",
+   "enemy": "chief",
+   "dice": [
+    3,
+    1
+   ],
+   "total": 6,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 8
+  },
+  {
+   "t": 12,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    1,
+    5
+   ],
+   "total": 6,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 8
+  },
+  {
+   "t": 13,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    3,
+    3
+   ],
+   "sum": 6,
+   "modifier": 0,
+   "total": 6,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": false
+  },
+  {
+   "t": 13,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "chief",
+   "damage": 0,
+   "fumble": false
+  },
+  {
+   "t": 13,
+   "type": "enemy_attack",
+   "enemy": "chief",
+   "dice": [
+    3,
+    6
+   ],
+   "total": 11,
+   "hit": true,
+   "damage": 4,
+   "player_hp": 4
+  },
+  {
+   "t": 13,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    5,
+    2
+   ],
+   "total": 7,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 4
+  },
+  {
+   "t": 14,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    3,
+    1
+   ],
+   "sum": 4,
+   "modifier": 0,
+   "total": 4,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": false
+  },
+  {
+   "t": 14,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "chief",
+   "damage": 0,
+   "fumble": false
+  },
+  {
+   "t": 14,
+   "type": "enemy_attack",
+   "enemy": "chief",
+   "dice": [
+    1,
+    6
+   ],
+   "total": 9,
+   "hit": true,
+   "damage": 3,
+   "player_hp": 1
+  },
+  {
+   "t": 14,
+   "type": "enemy_attack",
+   "enemy": "goblin",
+   "dice": [
+    2,
+    4
+   ],
+   "total": 6,
+   "hit": false,
+   "damage": 0,
+   "player_hp": 1
+  },
+  {
+   "t": 15,
+   "type": "check",
+   "tag": "attack_attack",
+   "dice": [
+    3,
+    1
+   ],
+   "sum": 4,
+   "modifier": 0,
+   "total": 4,
+   "target": 8,
+   "crit": false,
+   "fumble": false,
+   "success": false
+  },
+  {
+   "t": 15,
+   "type": "player_attack",
+   "kind": "attack",
+   "target": "chief",
+   "damage": 0,
+   "fumble": false
+  },
+  {
+   "t": 15,
+   "type": "enemy_attack",
+   "enemy": "chief",
+   "dice": [
+    5,
+    6
+   ],
+   "total": 13,
+   "hit": true,
+   "damage": 4,
+   "player_hp": 0
+  },
+  {
+   "t": 15,
+   "type": "defeat",
+   "node": "depths"
+  },
+  {
+   "t": 15,
+   "type": "ending",
+   "result": "defeat"
+  }
+ ],
+ "expected_focus_trace": [
+  "goblin:location/well"
+ ],
+ "expected_lod_trace": [
+  [],
+  [],
+  [],
+  [
+   {
+    "object_id": "goblin:location/well",
+    "attention_level": 1,
+    "unlocked_lod_cap": 3,
+    "current_lod": 1
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/well",
+    "attention_level": 3,
+    "unlocked_lod_cap": 3,
+    "current_lod": 2
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/well",
+    "attention_level": 4,
+    "unlocked_lod_cap": 3,
+    "current_lod": 2
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/well",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/well",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/well",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/well",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/well",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/well",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/well",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/well",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/well",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/well",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/well",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   }
+  ],
+  [
+   {
+    "object_id": "goblin:location/well",
+    "attention_level": 6,
+    "unlocked_lod_cap": 3,
+    "current_lod": 3
+   }
+  ]
+ ],
+ "expected_position_trace": [
+  {
+   "x": 3,
+   "y": 1
+  },
+  {
+   "x": 3,
+   "y": 3
+  },
+  {
+   "x": 3,
+   "y": 3
+  },
+  {
+   "x": 3,
+   "y": 3
+  },
+  {
+   "x": 3,
+   "y": 3
+  },
+  {
+   "x": 3,
+   "y": 3
+  },
+  {
+   "x": 3,
+   "y": 3
+  },
+  {
+   "x": 3,
+   "y": 3
+  },
+  {
+   "x": 3,
+   "y": 3
+  },
+  {
+   "x": 3,
+   "y": 3
+  },
+  {
+   "x": 3,
+   "y": 1
+  },
+  {
+   "x": 3,
+   "y": 1
+  },
+  {
+   "x": 1,
+   "y": 2
+  },
+  {
+   "x": 1,
+   "y": 2
+  },
+  {
+   "x": 5,
+   "y": 2
+  },
+  {
+   "x": 5,
+   "y": 2
+  },
+  {
+   "x": 5,
+   "y": 2
+  },
+  null
+ ]
+}

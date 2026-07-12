@@ -87,8 +87,8 @@ def test_line_step_resolves_exact_destination_without_state_change(monkeypatch):
     answers = iter(["STEP EAST", "step east"])
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
     action = controller.village_action(context, game_map=game_map, picked=())
-    assert action == MovePlayerToPositionAction(PlayerPosition(2, 2))
-    assert state.player_position == PlayerPosition(1, 2)
+    assert action == MovePlayerToPositionAction(PlayerPosition(4, 3))
+    assert state.player_position == PlayerPosition(3, 3)
 
 
 def test_help_distinguishes_go_and_step(capsys):

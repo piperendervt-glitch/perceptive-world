@@ -206,7 +206,7 @@ def test_production_catalog_matches_goblin_game_map_and_is_connected():
         assert unblocked_walkable == reachable
 
 
-def test_production_queries_are_exact_and_live_lookup_remains_disconnected():
+def test_production_queries_are_exact_and_live_lookup_uses_catalog():
     catalog = goblin_scene_spatial_catalog()
     well_id = WorldObjectId("goblin", "location/well")
     catalog_well = spatial_definition_in_catalog(catalog, well_id)
@@ -216,10 +216,10 @@ def test_production_queries_are_exact_and_live_lookup_remains_disconnected():
     ) is None
     active_well = spatial_definition_for_scene("well")
     assert active_well is not None
-    assert active_well is not catalog_well
-    assert active_well.entry_spawns == ()
-    assert active_well.exits == ()
-    assert spatial_definition_for_scene("plaza") is None
+    assert active_well is catalog_well
+    assert active_well.entry_spawns
+    assert active_well.exits
+    assert spatial_definition_for_scene("plaza") is not None
     assert entry_spawn_from_scene(
         catalog_well, WorldObjectId("goblin", "location/plaza"),
     ) == PlayerPosition(3, 3)

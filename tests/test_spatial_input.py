@@ -1,13 +1,16 @@
 import pytest
 
-from trpg_core.input_actions import MovePlayerToPositionAction
+from trpg_core.input_actions import DepartAction, MovePlayerToPositionAction, MoveToLocationAction
+from trpg_core.spatial_catalog import goblin_scene_spatial_catalog, spatial_definition_in_catalog
 from trpg_core.spatial import MovementStep, PlayerPosition
 from trpg_core.spatial_input import (
     movement_action_from_step,
+    canonical_action_for_spatial_step,
     movement_step_for_gamepad_code,
     movement_step_for_keyboard_code,
     movement_step_for_line_command,
 )
+from trpg_core.world import WorldObjectId
 
 
 @pytest.mark.parametrize("code,expected", [
@@ -59,3 +62,28 @@ def test_action_construction_stores_only_resolved_destination_and_is_pure():
     assert action == MovePlayerToPositionAction(PlayerPosition(2, 2))
     assert set(action.__dict__) == {"destination"}
     assert position == PlayerPosition(1, 2) and step == MovementStep(1, 0)
+
+
+def test_spatial_step_resolves_normal_move_scene_exit_and_depart_exactly_once():
+    catalog = goblin_scene_spatial_catalog()
+    plaza_id = WorldObjectId("goblin", "location/plaza")
+    plaza = spatial_definition_in_catalog(catalog, plaza_id)
+    position = PlayerPosition(3, 2)
+    normal = canonical_action_for_spatial_step(
+        current_scene_id=plaza_id, current_position=position,
+        step=MovementStep(0, -1), definition=plaza,
+    )
+    assert normal == MovePlayerToPositionAction(PlayerPosition(3, 1))
+    move = canonical_action_for_spatial_step(
+        current_scene_id=plaza_id, current_position=PlayerPosition(3, 1),
+        step=MovementStep(0, -1), definition=plaza,
+    )
+    assert move == MoveToLocationAction(WorldObjectId("goblin", "location/well"))
+    gate_id = WorldObjectId("goblin", "location/forest_gate")
+    gate = spatial_definition_in_catalog(catalog, gate_id)
+    depart = canonical_action_for_spatial_step(
+        current_scene_id=gate_id, current_position=PlayerPosition(3, 1),
+        step=MovementStep(0, -1), definition=gate,
+    )
+    assert depart == DepartAction()
+    assert position == PlayerPosition(3, 2)

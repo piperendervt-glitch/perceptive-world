@@ -1,7 +1,11 @@
 import pytest
 
 from trpg_core.presentation import SceneSpatialView, SpatialCellView, SpatialObjectView
-from trpg_core.two_d import build_two_d_layout, pixel_rect_for_cell, spatial_object_at_pixel
+from trpg_core.two_d import (
+    build_side_panel_layout, build_two_d_layout, controls_text_for_phase,
+    pixel_rect_for_cell,
+    spatial_object_at_pixel,
+)
 from trpg_core.world import WorldObjectId
 
 
@@ -21,6 +25,23 @@ def test_layout_is_left_map_right_panel_bottom_controls_and_deterministic():
     assert one.side_panel_rect.left == one.map_rect.width
     assert one.controls_rect.top == one.map_rect.height
     assert one.map_rect.width + one.side_panel_rect.width == one.window_width
+
+
+def test_side_panel_sections_remain_ordered_with_four_exits_and_long_feedback():
+    layout = build_side_panel_layout(
+        panel_height=586, exit_count=4, scene_action_count=2,
+        focus_action_count=3, feedback="長いfeedback" * 30,
+    )
+    assert (layout.status_top < layout.info_top < layout.exits_top
+            < layout.scene_actions_top < layout.focus_actions_top)
+    assert layout.focus_actions_top + 3 * (layout.button_height + 4) <= 598
+
+
+def test_controls_copy_is_phase_specific():
+    assert "WASD" in controls_text_for_phase("village")
+    assert "WASD" not in controls_text_for_phase("story")
+    assert "Focus" not in controls_text_for_phase("combat")
+    assert "Q" in controls_text_for_phase("ending")
 
 
 @pytest.mark.parametrize("kwargs", [

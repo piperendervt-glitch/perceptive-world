@@ -38,12 +38,12 @@ def _fingerprint(state):
     }
 
 
-@pytest.mark.parametrize("document,expected", [({}, 0), ({"format_version": 0}, 0), ({"format_version": 1}, 1), ({"format_version": 2}, 2), ({"format_version": 3}, 3)])
+@pytest.mark.parametrize("document,expected", [({}, 0), ({"format_version": 0}, 0), ({"format_version": 1}, 1), ({"format_version": 2}, 2), ({"format_version": 3}, 3), ({"format_version": 4}, 4)])
 def test_save_format_version_parser(document, expected):
     assert parse_save_format_version(document) == expected
 
 
-@pytest.mark.parametrize("value", [True, False, "1", 1.0, -1, 4, None, [], {}])
+@pytest.mark.parametrize("value", [True, False, "1", 1.0, -1, 5, None, [], {}])
 def test_save_format_version_parser_rejects_invalid_values(value):
     with pytest.raises(ValueError, match="format_version"):
         parse_save_format_version({"format_version": value})
@@ -54,8 +54,8 @@ def test_canonical_save_document_always_contains_version_and_focus_without_side_
     focused = _focus(state)
     before = _fingerprint(state)
     document = make_save_document(state)
-    assert document["format_version"] == CURRENT_SAVE_FORMAT_VERSION == 3
-    assert document["player_position"] == {"x": 1, "y": 2}
+    assert document["format_version"] == CURRENT_SAVE_FORMAT_VERSION == 4
+    assert document["player_position"] == {"x": 3, "y": 3}
     assert document["lod_runtime"] == []
     assert document["focused_object_id"] == "goblin:location/well"
     assert {k: document[k] for k in state.snapshot()} == state.snapshot()
@@ -185,12 +185,12 @@ def test_save_v2_round_trip_persists_only_lod_runtime_primitives(tmp_path):
     ),))
 
 
-def test_save_v3_round_trip_persists_only_player_coordinates(tmp_path):
+def test_save_v4_round_trip_persists_only_player_coordinates(tmp_path):
     state = _state()
     state.transition_location("well")
     state.player_position = PlayerPosition(2, 2)
     document = make_save_document(state)
-    assert document["format_version"] == 3
+    assert document["format_version"] == 4
     assert document["player_position"] == {"x": 2, "y": 2}
     assert set(document["player_position"]) == {"x", "y"}
     controller = ConsoleController(state, str(tmp_path))
@@ -217,12 +217,31 @@ def test_invalid_save_v3_position_is_atomic(tmp_path, payload):
 
 
 def test_non_null_position_requires_spatial_location(tmp_path):
-    live = _state()
+    live = GameState(7, scenario=load_scenario("envoy"))
     before = _fingerprint(live)
     document = make_save_document(live)
     document["player_position"] = {"x": 1, "y": 2}
     (tmp_path / "badscene.json").write_text(json.dumps(document), encoding="utf-8")
     assert ConsoleController(live, str(tmp_path))._load("badscene") is False
+    assert _fingerprint(live) == before
+
+
+def test_v3_null_position_migrates_to_catalog_spawn_and_v4_exit_is_rejected(tmp_path):
+    live = _state()
+    document = make_save_document(live)
+    document["format_version"] = 3
+    document["player_position"] = None
+    (tmp_path / "legacy-null.json").write_text(
+        json.dumps(document), encoding="utf-8",
+    )
+    assert ConsoleController(live, str(tmp_path))._load("legacy-null") is True
+    assert live.player_position == PlayerPosition(3, 2)
+
+    before = _fingerprint(live)
+    invalid = make_save_document(live)
+    invalid["player_position"] = {"x": 3, "y": 4}
+    (tmp_path / "exit.json").write_text(json.dumps(invalid), encoding="utf-8")
+    assert ConsoleController(live, str(tmp_path))._load("exit") is False
     assert _fingerprint(live) == before
 
 

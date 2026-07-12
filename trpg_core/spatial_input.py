@@ -1,7 +1,12 @@
 """Pure physical and line-input adapters for spatial movement."""
 
-from .input_actions import MovePlayerToPositionAction
-from .spatial import MovementStep, PlayerPosition, player_position_after_step
+from .input_actions import DepartAction, MovePlayerToPositionAction, MoveToLocationAction
+from .spatial import (
+    DepartSceneExit, MovementStep, MoveToSceneExit, PlayerPosition, SceneCell,
+    player_position_after_step,
+)
+from .spatial_content import SceneSpatialDefinition, spatial_exit_at_cell
+from .world import WorldObjectId
 
 
 _KEYBOARD_STEPS = {
@@ -51,3 +56,29 @@ def movement_action_from_step(
     if type(step) is not MovementStep:
         raise ValueError("step must be a MovementStep")
     return MovePlayerToPositionAction(player_position_after_step(position, step))
+
+
+def canonical_action_for_spatial_step(
+    *,
+    current_scene_id: WorldObjectId,
+    current_position: PlayerPosition,
+    step: MovementStep,
+    definition: SceneSpatialDefinition,
+):
+    if type(current_scene_id) is not WorldObjectId:
+        raise ValueError("current_scene_id must be a WorldObjectId")
+    if type(current_position) is not PlayerPosition:
+        raise ValueError("current_position must be a PlayerPosition")
+    if type(step) is not MovementStep:
+        raise ValueError("step must be a MovementStep")
+    if type(definition) is not SceneSpatialDefinition:
+        raise ValueError("definition must be a SceneSpatialDefinition")
+    candidate = player_position_after_step(current_position, step)
+    exit_ = spatial_exit_at_cell(definition, SceneCell(candidate.x, candidate.y))
+    if exit_ is None:
+        return MovePlayerToPositionAction(candidate)
+    if type(exit_.transition) is MoveToSceneExit:
+        return MoveToLocationAction(exit_.transition.destination_scene_id)
+    if type(exit_.transition) is DepartSceneExit:
+        return DepartAction()
+    raise ValueError("unsupported spatial exit transition")

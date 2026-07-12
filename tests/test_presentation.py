@@ -322,18 +322,48 @@ def test_well_snapshot_exposes_neutral_spatial_view_without_mutation():
     snapshot = build_render_snapshot(state, active_game_map=game_map)
     scene = snapshot.spatial_scene
     assert (scene.width, scene.height) == (7, 5)
-    assert scene.player_position.x == 1 and scene.player_position.y == 2
-    assert len(scene.walkable_cells) == 15
+    assert scene.player_position.x == 3 and scene.player_position.y == 3
+    assert len(scene.walkable_cells) == 17
     assert len(scene.objects) == 1 and scene.objects[0].label == "古井戸"
+    assert [(item.position.x, item.position.y, item.label, item.transition_kind)
+            for item in scene.exits] == [
+        (3, 4, "村の広場", "move"), (3, 0, "物見櫓", "move"),
+    ]
     assert scene.objects[0].focus_candidate is True
     assert (state.snapshot(), state.player_position, state.focus_state) == before
 
 
-def test_snapshot_without_spatial_definition_has_no_spatial_view():
+def test_plaza_snapshot_has_current_catalog_spatial_view():
     from trpg_core.map import build_map
     from trpg_core.scenario_loader import load_scenario
     from trpg_core.session import GameState
     state = GameState(7, scenario=load_scenario("goblin"))
     assert build_render_snapshot(
         state, active_game_map=build_map(state.scenario, state.location),
-    ).spatial_scene is None
+    ).spatial_scene is not None
+
+
+def test_all_goblin_landmarks_have_distinct_safe_glyphs():
+    from trpg_core.map import build_map
+    from trpg_core.scenario_loader import load_scenario
+    from trpg_core.session import GameState
+    scenario = load_scenario("goblin")
+    glyphs = {}
+    for scene_id in scenario.map_locations:
+        state = GameState(7, scenario=scenario)
+        if scene_id != state.location:
+            definition = state.spatial_definition_for_location(scene_id)
+            source = definition.entry_spawns[0].source_scene_id.local_id.removeprefix(
+                "location/",
+            )
+            state.transition_location(scene_id, source_location=source)
+        scene = build_render_snapshot(
+            state, active_game_map=build_map(scenario, scene_id),
+        ).spatial_scene
+        glyphs[scene_id] = scene.objects[0].glyph
+        assert ":" not in scene.objects[0].glyph
+    assert glyphs == {
+        "plaza": "広", "well": "井", "lookout": "櫓",
+        "herbhut": "薬", "shrine": "祠", "elderhouse": "長",
+        "forest_gate": "門",
+    }

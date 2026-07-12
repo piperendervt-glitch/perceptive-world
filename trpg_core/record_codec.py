@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from .world import parse_world_object_id
 
 
-CURRENT_RECORD_FORMAT_VERSION = 3
+CURRENT_RECORD_FORMAT_VERSION = 4
 LEGACY_RECORD_FORMAT_VERSION = 0
-SUPPORTED_RECORD_FORMAT_VERSIONS = frozenset({0, 1, 2, 3})
+SUPPORTED_RECORD_FORMAT_VERSIONS = frozenset({0, 1, 2, 3, 4})
 
 _LEGACY_PAYLOAD_VERBS = frozenset({"explore", "choice", "combat"})
 _V1_PAYLOAD_VERBS = _LEGACY_PAYLOAD_VERBS | frozenset({"move-to", "focus:set"})
@@ -83,7 +83,7 @@ def serialize_record_token(
             raise ValueError("record token 'lod-unlock' requires a non-empty payload")
         _validate_lod_unlock_payload(payload)
         return f"{verb}:{payload}"
-    if format_version == 3 and verb == _V3_MOVE_PLAYER_VERB:
+    if format_version >= 3 and verb == _V3_MOVE_PLAYER_VERB:
         if not isinstance(payload, str) or not payload:
             raise ValueError("record token 'move-player-to' requires a payload")
         _validate_move_player_payload(payload)
@@ -110,7 +110,7 @@ def parse_record_token(token: str, *, format_version: int) -> ParsedRecordToken:
         payload = token[len(_V2_LOD_UNLOCK_VERB) + 1:]
         _validate_lod_unlock_payload(payload)
         return ParsedRecordToken(_V2_LOD_UNLOCK_VERB, payload)
-    if format_version == 3 and token.startswith(_V3_MOVE_PLAYER_VERB + ":"):
+    if format_version >= 3 and token.startswith(_V3_MOVE_PLAYER_VERB + ":"):
         payload = token[len(_V3_MOVE_PLAYER_VERB) + 1:]
         _validate_move_player_payload(payload)
         return ParsedRecordToken(_V3_MOVE_PLAYER_VERB, payload)

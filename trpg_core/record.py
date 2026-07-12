@@ -168,10 +168,14 @@ def build_fixture(scenario_id: str, seed: int, base_controller, respawn=False) -
     return fixture
 
 
-def fixture_from_inputs(scenario_id: str, seed: int, inputs, respawn=False) -> dict:
+def fixture_from_inputs(
+    scenario_id: str, seed: int, inputs, respawn=False, *, input_format_version=0,
+) -> dict:
     """既にある型付き入力列からフィクスチャを生成（expected_log を再生成）。"""
     state = _new_state(scenario_id, seed, respawn)
-    controller = FixtureController(inputs, state.scenario, format_version=0)
+    controller = FixtureController(
+        inputs, state.scenario, format_version=input_format_version,
+    )
     _result, focus_trace, lod_trace, position_trace = _run_with_traces(state, controller)
     controller.assert_all_events_consumed()
     fixture = {"format_version": CURRENT_RECORD_FORMAT_VERSION,

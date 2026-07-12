@@ -55,7 +55,7 @@ def test_shared_move_and_focus_guards_apply_canonical_events():
     assert state.rng.state() == before[1] and state.log == before[2]
     assert not _apply_village_action(state, game_map, picked, MoveToLocationAction(well))
     assert state.location == game_map.current == "well"
-    assert state.player_position == PlayerPosition(1, 2)
+    assert state.player_position == PlayerPosition(3, 3)
     assert state.focus_state.focused_object_id is None
     assert not _apply_village_action(state, game_map, picked, ExploreAction("well"))
     assert picked == ["well"]
@@ -67,10 +67,10 @@ def test_coarse_scene_transition_sets_spawn_then_clears_position():
     well = location_world_object_id("goblin", "well")
     plaza = location_world_object_id("goblin", "plaza")
     assert not _apply_village_action(state, game_map, picked, MoveToLocationAction(well))
-    assert state.player_position == PlayerPosition(1, 2)
+    assert state.player_position == PlayerPosition(3, 3)
     assert not _apply_village_action(state, game_map, picked, MoveToLocationAction(plaza))
     assert state.location == game_map.current == "plaza"
-    assert state.player_position is None
+    assert state.player_position == PlayerPosition(3, 1)
 
 
 def test_shared_dispatcher_applies_lod_actions_to_engine_owned_runtime():
@@ -145,7 +145,7 @@ def test_recording_commits_only_accepted_resolved_spatial_destination():
     state, game_map = _setup()
     state.transition_location("well")
     game_map.current = "well"
-    accepted = MovePlayerToPositionAction(PlayerPosition(2, 2))
+    accepted = MovePlayerToPositionAction(PlayerPosition(2, 3))
     blocked = MovePlayerToPositionAction(PlayerPosition(3, 2))
 
     class Base:
@@ -159,7 +159,7 @@ def test_recording_commits_only_accepted_resolved_spatial_destination():
     assert recorder.inputs == []
     assert not _apply_village_action(state, game_map, [], event)
     recorder.village_event_applied(event)
-    assert recorder.inputs == ["move-player-to:2,2"]
+    assert recorder.inputs == ["move-player-to:2,3"]
 
     rejected = RecordingController(Base(blocked), state.scenario)
     event = rejected.village_action(_village_context(state, game_map, []))
@@ -167,11 +167,11 @@ def test_recording_commits_only_accepted_resolved_spatial_destination():
         _apply_village_action(state, game_map, [], event)
     assert rejected.inputs == []
     rejected.village_event_rejected(event, ValueError("blocked"))
-    rejected.base.event = MovePlayerToPositionAction(PlayerPosition(2, 1))
+    rejected.base.event = MovePlayerToPositionAction(PlayerPosition(2, 2))
     retry = rejected.village_action(_village_context(state, game_map, []))
     assert not _apply_village_action(state, game_map, [], retry)
     rejected.village_event_applied(retry)
-    assert rejected.inputs == ["move-player-to:2,1"]
+    assert rejected.inputs == ["move-player-to:2,2"]
 
 
 def test_fixture_controller_v1_restores_one_event_at_a_time_without_state_changes():

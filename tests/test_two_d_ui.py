@@ -2,7 +2,7 @@ import sys
 
 from trpg_core.input_actions import (
     ClearFocusAction, InspectFocusedObjectAction, MovePlayerToPositionAction,
-    ObserveFocusedObjectAction, SetFocusAction,
+    MoveToLocationAction, ObserveFocusedObjectAction, SetFocusAction,
 )
 from trpg_core.presentation import SceneSpatialView, SpatialCellView, SpatialObjectView
 from trpg_core.spatial import PlayerPosition
@@ -45,26 +45,18 @@ def test_session_model_connects_actions_keys_click_and_redraw_to_shared_engine()
     model = TwoDSessionModel(state)
     assert model.snapshot.scene_title == "村の広場"
     assert model.snapshot.objective == "支度をあと3つ整える"
-    assert [label for label, _action in model.available_actions] == [
-        "北へ → 古井戸", "東へ → 薬草小屋", "南へ → 古い祠",
-        "西へ → 村長の家", "周囲を見る",
-    ]
+    assert [label for label, _action in model.available_actions] == ["周囲を見る"]
     assert all(label for label, _action in model.available_actions)
-    well_action = next(action for label, action in model.available_actions if "古井戸" in label)
     before_builds = model.snapshot_builds
-    assert model.dispatch(well_action)
-    assert state.location == "well" and state.player_position == PlayerPosition(1, 2)
+    state.player_position = PlayerPosition(3, 1)
+    assert model.handle_key("w", "w")
+    assert state.location == "well" and state.player_position == PlayerPosition(3, 3)
     assert model.snapshot_builds == before_builds + 1
-    assert [label for label, _action in model.available_actions] != [
-        "北へ → 古井戸", "東へ → 薬草小屋", "南へ → 古い祠",
-        "西へ → 村長の家", "周囲を見る",
+    assert [label for label, _action in model.available_actions] == [
+        "井戸を調べる", "周囲を見る",
     ]
-    assert model.handle_key("d", "d") == MovePlayerToPositionAction(PlayerPosition(2, 2))
-    assert state.player_position == PlayerPosition(2, 2)
-    model.handle_key("d", "d")
-    assert state.player_position == PlayerPosition(2, 2) and model.feedback
-    model.handle_key("w", "w")
-    assert state.player_position == PlayerPosition(2, 1)
+    assert model.handle_key("a", "a") == MovePlayerToPositionAction(PlayerPosition(2, 3))
+    assert state.player_position == PlayerPosition(2, 3)
 
     scene = model.snapshot.spatial_scene
     layout = build_two_d_layout(window_width=1000, window_height=700,
@@ -90,18 +82,16 @@ def test_action_callbacks_capture_distinct_indices_and_refocus():
                                        lambda: called.append("focus"))
         for index in range(len(model.available_actions))
     ]
-    callbacks[4]()
+    callbacks[0]()
     assert model.state.location == "plaza"
     assert model.feedback == "周囲を見渡した"
-    callbacks[0]()
-    assert model.state.location == "well"
-    assert called == ["redraw", "focus", "redraw", "focus"]
+    assert called == ["redraw", "focus"]
 
 
 def test_no_position_and_rejected_actions_are_nonfatal_and_render_is_pure():
     from trpg_core.scenario_loader import load_scenario
     from trpg_core.session import GameState
-    model = TwoDSessionModel(GameState(7, scenario=load_scenario("goblin")))
+    model = TwoDSessionModel(GameState(7, scenario=load_scenario("envoy")))
     builds = model.snapshot_builds
     assert model.handle_key("w", "w") is None
     assert "position" in model.feedback.lower()
@@ -109,6 +99,61 @@ def test_no_position_and_rejected_actions_are_nonfatal_and_render_is_pure():
     assert model.snapshot_builds == builds
     assert model.handle_key("o", "o") == ObserveFocusedObjectAction()
     assert model.feedback and not model.closed
+
+
+def test_forest_gate_depart_switches_to_story_then_combat_actions():
+    from trpg_core.scenario_loader import load_scenario
+    from trpg_core.session import GameState
+    from trpg_core.world import location_world_object_id
+    state = GameState(7, scenario=load_scenario("goblin"))
+    model = TwoDSessionModel(state)
+    model.picked[:] = ["well", "scout", "herbs"]
+    assert model.dispatch(MoveToLocationAction(
+        location_world_object_id("goblin", "elderhouse"),
+    ))
+    assert model.dispatch(MoveToLocationAction(
+        location_world_object_id("goblin", "forest_gate"),
+    ))
+    assert state.player_position == PlayerPosition(5, 2)
+    state.player_position = PlayerPosition(3, 1)
+    depart = model.handle_key("w", "w")
+    assert type(depart).__name__ == "DepartAction"
+    assert model.phase == "story"
+    assert state.player_position is None
+    assert model.snapshot.spatial_scene is None
+    assert model.available_actions and all(label for label, _ in model.available_actions)
+    assert model.activate_available_action(0)
+    assert model.phase == "combat"
+    assert [label for label, _ in model.available_actions] == [
+        "攻撃", "魔法", "薬草", "逃走",
+    ]
+    combat = model.snapshot
+    assert (combat.player.name, combat.player.hp, combat.player.hp_max,
+            combat.player.mp, combat.player.mp_max,
+            combat.player.recovery_item_count) == ("H", 20, 20, 10, 10, 0)
+    assert [(enemy.name, enemy.hp, enemy.hp_max) for enemy in combat.enemies] == [
+        ("見張りゴブリン", 5, 5),
+    ]
+    assert model.key_action("w", "w") is None
+    assert model.activate_available_action(0)
+    assert model.phase in {"story", "combat", "ending"}
+    assert model.phase == "ending" or model.available_actions
+    assert model.handle_key("q", "q") == "quit"
+
+
+def test_ending_snapshot_has_terminal_objective_not_stale_combat_copy():
+    from trpg_core.scenario_loader import load_scenario
+    from trpg_core.session import GameState
+    state = GameState(7, scenario=load_scenario("goblin"))
+    model = TwoDSessionModel(state)
+    ending_id = next(node.id for node in state.scenario.nodes.values()
+                     if node.kind == "ending")
+    state.node = ending_id
+    model.phase = "ending"
+    model.snapshot = model._build_snapshot()
+    assert model.snapshot.objective == "冒険は完了しました。Qで終了"
+    assert model.snapshot.spatial_scene is None
+    assert model.available_actions == ()
 
 
 class _Scheduler:

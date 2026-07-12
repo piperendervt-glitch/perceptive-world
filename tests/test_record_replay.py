@@ -25,9 +25,9 @@ LEGACY_INPUTS = [
 ]
 
 
-def test_new_fixture_is_v3_and_canonicalizes_choice_labels():
+def test_new_fixture_is_v4_and_canonicalizes_choice_labels():
     fixture = fixture_from_inputs("envoy", 0, LEGACY_INPUTS, respawn=True)
-    assert fixture["format_version"] == 3
+    assert fixture["format_version"] == 4
     assert fixture["scenario"] == "envoy"
     assert fixture["seed"] == 0
     assert "explore:rapport" in fixture["inputs"]
@@ -41,6 +41,31 @@ def test_new_fixture_is_v3_and_canonicalizes_choice_labels():
     assert ok, diff
     assert actual == fixture["expected_log"]
     assert fixture["respawn"] is True
+    assert len(fixture["expected_position_trace"]) == len(fixture["expected_lod_trace"])
+
+
+def test_v4_fixture_inputs_use_current_catalog_position_semantics():
+    legacy = load_fixture(os.path.join(
+        os.path.dirname(__file__), "fixtures", "spatial_play_v3.json",
+    ))["inputs"]
+    inputs = ["move-player-to:3,1"] + [
+        token for token in legacy if not token.startswith("move-player-to:")
+    ]
+    fixture = fixture_from_inputs(
+        "goblin", 7, inputs,
+        input_format_version=4,
+    )
+    assert fixture["inputs"][:2] == [
+        "move-player-to:3,1", "move-to:goblin:location/well",
+    ]
+    assert fixture["expected_position_trace"][:2] == [
+        {"x": 3, "y": 1}, {"x": 3, "y": 3},
+    ]
+    assert fixture["scenario"] == "goblin"
+    assert fixture["seed"] == 7
+    ok, actual, diff = replay_fixture(fixture)
+    assert ok, diff
+    assert actual == fixture["expected_log"]
     assert len(fixture["expected_position_trace"]) == len(fixture["expected_lod_trace"])
 
 

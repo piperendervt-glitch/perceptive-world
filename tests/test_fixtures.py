@@ -76,7 +76,7 @@ def test_all_fixtures_replay_state():
 
 def test_record_replay_roundtrip():
     for name, fx in _all_fixtures():
-        if fx.get("format_version") in {1, 2, 3}:
+        if fx.get("format_version") in {1, 2, 3, 4}:
             ok, actual, diff = replay_fixture(fx, mode="full")
             assert ok and actual == fx["expected_log"], f"{name}: v1 replay不一致 -> {diff}"
             continue
@@ -135,6 +135,21 @@ def test_spatial_v3_fixture_replays_twice_with_position_trace():
     assert fx["expected_position_trace"][0] == {"x": 1, "y": 2}
     assert fx["expected_position_trace"][-1] is None
     assert len(fx["expected_position_trace"]) == len(fx["expected_lod_trace"])
+    first = replay_fixture(fx, mode="full")
+    second = replay_fixture(fx, mode="full")
+    assert first == second
+    assert first[0] and first[1] == fx["expected_log"]
+
+
+def test_scene_spatial_v4_fixture_uses_catalog_entry_position_and_replays_twice():
+    fx = load_fixture(os.path.join(FIXTURE_DIR, "scene_spatial_play_v4.json"))
+    assert fx["format_version"] == 4
+    assert fx["inputs"][:2] == [
+        "move-player-to:3,1", "move-to:goblin:location/well",
+    ]
+    assert fx["expected_position_trace"][:2] == [
+        {"x": 3, "y": 1}, {"x": 3, "y": 3},
+    ]
     first = replay_fixture(fx, mode="full")
     second = replay_fixture(fx, mode="full")
     assert first == second

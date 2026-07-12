@@ -135,6 +135,7 @@ class PlayerView:
     pending_recovery_count: int = 0
     attributes: tuple[AttributeView, ...] = field(default_factory=tuple)
     buffs: tuple[str, ...] = field(default_factory=tuple)
+    name: str = "H"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "attributes", tuple(self.attributes))
@@ -157,6 +158,7 @@ class EnemyView:
     hp: int
     alive: bool
     auto_target: bool = False
+    hp_max: int = 0
 
 
 @dataclass(frozen=True)
@@ -183,6 +185,45 @@ class SpatialObjectView:
     position: SpatialCellView
     blocks_movement: bool
     focus_candidate: bool
+    glyph: str = "?"
+
+    def __post_init__(self):
+        if type(self.label) is not str or not self.label:
+            raise ValueError("spatial object label must be non-empty")
+        if type(self.glyph) is not str or not self.glyph:
+            raise ValueError("spatial object glyph must be non-empty")
+
+
+_LANDMARK_GLYPHS = {
+    "村の広場": "広",
+    "古井戸": "井",
+    "物見櫓": "櫓",
+    "薬草小屋": "薬",
+    "古い祠": "祠",
+    "村長の家": "長",
+    "村の出口（森へ）": "門",
+}
+
+
+def landmark_glyph_for_label(label: str) -> str:
+    if type(label) is not str or not label:
+        raise ValueError("landmark label must be non-empty")
+    return _LANDMARK_GLYPHS.get(label, label[0])
+
+
+@dataclass(frozen=True)
+class SpatialExitView:
+    position: SpatialCellView
+    label: str
+    transition_kind: str
+
+    def __post_init__(self):
+        if type(self.position) is not SpatialCellView:
+            raise ValueError("position must be a SpatialCellView")
+        if type(self.label) is not str or not self.label:
+            raise ValueError("label must be non-empty text")
+        if self.transition_kind not in {"move", "depart"}:
+            raise ValueError("transition_kind must be move or depart")
 
 
 @dataclass(frozen=True)
@@ -193,11 +234,12 @@ class SceneSpatialView:
     blocked_cells: tuple[SpatialCellView, ...]
     player_position: SpatialCellView | None
     objects: tuple[SpatialObjectView, ...]
+    exits: tuple[SpatialExitView, ...] = ()
 
     def __post_init__(self):
         if type(self.width) is not int or self.width <= 0 or type(self.height) is not int or self.height <= 0:
             raise ValueError("spatial dimensions must be positive ints")
-        for name in ("walkable_cells", "blocked_cells", "objects"):
+        for name in ("walkable_cells", "blocked_cells", "objects", "exits"):
             if type(getattr(self, name)) is not tuple:
                 raise ValueError(f"{name} must be a tuple")
         if len(set(self.walkable_cells)) != len(self.walkable_cells):
@@ -207,6 +249,9 @@ class SceneSpatialView:
         ids = tuple(item.object_id for item in self.objects)
         if len(set(ids)) != len(ids):
             raise ValueError("duplicate spatial object ID")
+        exit_cells = tuple(item.position for item in self.exits)
+        if len(set(exit_cells)) != len(exit_cells):
+            raise ValueError("duplicate spatial exit cell")
 
 
 @dataclass(frozen=True)
@@ -350,8 +395,7 @@ def build_render_snapshot(
                 raise ValueError("focused object is not in the current scene")
             focused_object_id = serialize_world_object_id(focused_id)
         from .spatial import SceneCell, is_blocked_cell
-        from .spatial_content import spatial_definition_for_scene
-        definition = spatial_definition_for_scene(active_game_map.current)
+        definition = state.spatial_definition_for_location(active_game_map.current)
         if definition is not None:
             spec = definition.spec
             visible_by_id = {item.spec.object_id: item for item in scene_objects
@@ -363,6 +407,9 @@ def build_render_snapshot(
                     SpatialCellView(placement.position.x, placement.position.y),
                     placement.blocks_movement,
                     visible_by_id[placement.object_id].visibility.focus_candidate,
+                    landmark_glyph_for_label(
+                        visible_by_id[placement.object_id].spec.label,
+                    ),
                 )
                 for placement in spec.object_placements
                 if placement.object_id in visible_by_id
@@ -374,12 +421,31 @@ def build_render_snapshot(
                 if is_blocked_cell(spec, SceneCell(x, y))
             )
             position = getattr(state, "player_position", None)
+            from .spatial import DepartSceneExit, MoveToSceneExit
+            exits = []
+            for exit_ in definition.exits:
+                if type(exit_.transition) is MoveToSceneExit:
+                    local_id = exit_.transition.destination_scene_id.local_id
+                    destination = local_id.removeprefix("location/")
+                    if destination not in active_game_map.locations:
+                        raise ValueError("spatial exit destination is not in map")
+                    label = active_game_map.locations[destination].name
+                    kind = "move"
+                elif type(exit_.transition) is DepartSceneExit:
+                    label = "森の道へ"
+                    kind = "depart"
+                else:
+                    raise ValueError("unsupported spatial exit transition")
+                exits.append(SpatialExitView(
+                    SpatialCellView(exit_.cell.x, exit_.cell.y), label, kind,
+                ))
             spatial_scene = SceneSpatialView(
                 spec.bounds.width, spec.bounds.height,
                 tuple(SpatialCellView(cell.x, cell.y) for cell in spec.walkable_cells),
                 blocked,
                 None if position is None else SpatialCellView(position.x, position.y),
                 objects,
+                tuple(exits),
             )
     elif focused_id is not None:
         raise ValueError("focused object requires an active map scene")
@@ -419,6 +485,7 @@ def build_enemy_views(enemies: Iterable[Any]) -> tuple[EnemyView, ...]:
             hp=int(enemy.hp),
             alive=bool(enemy.alive),
             auto_target=enemy is first_alive,
+            hp_max=int(enemy.hp_max),
         )
         for enemy in source
     )

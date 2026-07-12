@@ -131,9 +131,15 @@ _WELL_DEFINITION = SceneSpatialDefinition(
 _DEFINITIONS = (_WELL_DEFINITION,)
 
 
-def spatial_definition_for_scene(
-    scene_id: str,
+def legacy_spatial_definition_for_scene(
+    scenario_id: str,
+    scene_id: str | None = None,
 ) -> SceneSpatialDefinition | None:
+    if scene_id is None:
+        scene_id = scenario_id
+        scenario_id = "goblin"
+    if scenario_id != "goblin":
+        return None
     if type(scene_id) is not str:
         raise ValueError("scene_id must be a string")
     return next(
@@ -141,3 +147,28 @@ def spatial_definition_for_scene(
          if definition.spec.scene_id == scene_id),
         None,
     )
+
+
+def current_spatial_definition_for_scene(
+    scenario_id: str,
+    scene_id: str,
+) -> SceneSpatialDefinition | None:
+    if type(scenario_id) is not str or not scenario_id:
+        raise ValueError("scenario_id must be a non-empty string")
+    if type(scene_id) is not str:
+        raise ValueError("scene_id must be a string")
+    if scenario_id != "goblin" or not scene_id:
+        return None
+    from .spatial_catalog import (
+        goblin_scene_spatial_catalog,
+        spatial_definition_in_catalog,
+    )
+    return spatial_definition_in_catalog(
+        goblin_scene_spatial_catalog(),
+        WorldObjectId(scenario_id, f"location/{scene_id}"),
+    )
+
+
+def spatial_definition_for_scene(scene_id: str) -> SceneSpatialDefinition | None:
+    """Current goblin live lookup; retained as the simple content query API."""
+    return current_spatial_definition_for_scene("goblin", scene_id)

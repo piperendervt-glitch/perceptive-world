@@ -256,8 +256,14 @@ def _run(
     collect_focus_trace=False, collect_lod_trace=False, collect_position_trace=False,
 ):
     from .session import GameState, run_session
+    from .spatial_content import legacy_spatial_definition_for_scene
     from .scenario_loader import load_scenario
-    state = GameState(seed, scenario=load_scenario(scenario_id))
+    provider = (
+        legacy_spatial_definition_for_scene if format_version <= 3 else None
+    )
+    state_args = ({"spatial_definition_provider": provider}
+                  if provider is not None else {})
+    state = GameState(seed, scenario=load_scenario(scenario_id), **state_args)
     state.respawn_on_defeat = respawn
     controller = FixtureController(inputs, state.scenario, format_version=format_version)
     focus_trace = [] if collect_focus_trace else None
@@ -286,8 +292,8 @@ def _run(
 def expected_focus_trace(fixture: dict, *, format_version: int):
     if "expected_focus_trace" not in fixture:
         return None
-    if format_version not in {1, 2, 3}:
-        raise ValueError("expected_focus_trace is supported only for format_version 1, 2 or 3")
+    if format_version not in {1, 2, 3, 4}:
+        raise ValueError("expected_focus_trace is supported only for format_version 1 through 4")
     raw = fixture["expected_focus_trace"]
     if not isinstance(raw, list):
         raise ValueError("expected_focus_trace must be an array")
@@ -354,8 +360,8 @@ def serialize_lod_trace(trace) -> list[list[dict]]:
 def expected_lod_trace(fixture: dict, *, format_version: int):
     if "expected_lod_trace" not in fixture:
         return None
-    if format_version not in {2, 3}:
-        raise ValueError("expected_lod_trace is supported only for format_version 2 or 3")
+    if format_version not in {2, 3, 4}:
+        raise ValueError("expected_lod_trace is supported only for format_version 2 through 4")
     raw = fixture["expected_lod_trace"]
     if not isinstance(raw, list):
         raise ValueError("expected_lod_trace must be an array")
@@ -409,8 +415,8 @@ def serialize_position_trace(trace):
 def expected_position_trace(fixture: dict, *, format_version: int):
     if "expected_position_trace" not in fixture:
         return None
-    if format_version != 3:
-        raise ValueError("expected_position_trace is supported only for format_version 3")
+    if format_version not in {3, 4}:
+        raise ValueError("expected_position_trace is supported only for format_version 3 or 4")
     raw = fixture["expected_position_trace"]
     if type(raw) is not list:
         raise ValueError("expected_position_trace must be an array")

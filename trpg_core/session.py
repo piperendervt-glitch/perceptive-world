@@ -60,10 +60,16 @@ from .world import (
 from .lod import ObjectAttentionState, ObjectLodState
 from .lod_actions import LodRuntimeState, ObjectLodProgress, apply_lod_action
 from .lod_content import lod_content_for_world_object
-from .spatial import PlayerPosition, can_player_occupy
-from .spatial_content import spatial_definition_for_scene
+from .spatial import PlayerPosition, SceneCell, can_player_occupy
+from .spatial_content import (
+    current_spatial_definition_for_scene,
+    entry_spawn_from_scene,
+    spatial_exit_at_cell,
+)
 from .spatial_actions import apply_player_movement
-from .spatial_input import movement_action_from_step, movement_step_for_line_command
+from .spatial_input import (
+    canonical_action_for_spatial_step, movement_step_for_line_command,
+)
 
 # Windows console default cp932 chokes on CJK output; force UTF-8（resolve.py と同流儀）。
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -74,8 +80,8 @@ LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
 RELOAD = "__reload__"
 DEFAULT_SCENARIO = "goblin"
 LEGACY_SAVE_FORMAT_VERSION = 0
-CURRENT_SAVE_FORMAT_VERSION = 3
-SUPPORTED_SAVE_FORMAT_VERSIONS = frozenset({0, 1, 2, 3})
+CURRENT_SAVE_FORMAT_VERSION = 4
+SUPPORTED_SAVE_FORMAT_VERSIONS = frozenset({0, 1, 2, 3, 4})
 
 # 村の地図移動の方角エイリアス（英語/略/日本語）。地図移動は乱数を消費しない（UI のみ）。
 _DIR_ALIAS = {
@@ -113,7 +119,10 @@ class GameState:
             raise ValueError("lod_runtime must be a LodRuntimeState")
         self._lod_runtime = value
 
-    def __init__(self, seed: int, scenario=None, *, player_position=None):
+    def __init__(
+        self, seed: int, scenario=None, *, player_position=None,
+        spatial_definition_provider=current_spatial_definition_for_scene,
+    ):
         # シナリオ（データ）を読む。char/敵/ノードはすべてここから来る。
         if scenario is None:
             scenario = load_scenario(DEFAULT_SCENARIO)
@@ -137,7 +146,12 @@ class GameState:
         self.node = scenario.start_node
         # 村の現在地（地図の真実源＝GameMap の current をここに永続化。save/load 対象）。
         self.location = scenario.map_start if getattr(scenario, "has_map", False) else None
-        self.player_position = player_position
+        self._spatial_definition_provider = spatial_definition_provider
+        definition = self.spatial_definition_for_location(self.location)
+        self.player_position = (
+            player_position if player_position is not None
+            else (definition.player_spawn if definition is not None else None)
+        )
         self.started = False
         self.respawn_on_defeat = False
         self.log: list[dict] = []
@@ -176,16 +190,28 @@ class GameState:
         self.node = node
         self.clear_focused_object()
 
-    def transition_location(self, location: str | None) -> None:
+    def spatial_definition_for_location(self, location: str | None):
+        if location is None:
+            return None
+        return self._spatial_definition_provider(self.scenario.id, location)
+
+    def transition_location(
+        self, location: str | None, *, source_location: str | None = None,
+    ) -> None:
         if location == self.location:
             return
+        definition = self.spatial_definition_for_location(location)
+        source = self.location if source_location is None else source_location
+        position = definition.player_spawn if definition is not None else None
+        if definition is not None and source is not None:
+            source_definition = self.spatial_definition_for_location(source)
+            if source_definition is not None and definition.entry_spawns:
+                source_id = location_world_object_id(self.scenario.id, source)
+                position = entry_spawn_from_scene(definition, source_id)
+                if position is None:
+                    raise ValueError("destination has no entry spawn for source scene")
         self.location = location
-        definition = (
-            spatial_definition_for_scene(location) if location is not None else None
-        )
-        self.player_position = (
-            definition.player_spawn if definition is not None else None
-        )
+        self.player_position = position
         self.clear_focused_object()
 
     def reset_for_village(self) -> None:
@@ -288,24 +314,30 @@ def _decode_lod_runtime(document, version):
     return LodRuntimeState(tuple(entries))
 
 
-def _decode_player_position(document, version, location):
+def _decode_player_position(document, version, location, scenario_id):
+    definition = current_spatial_definition_for_scene(scenario_id, location)
     if version < 3:
         if "player_position" in document:
             raise ValueError("legacy save cannot contain player_position")
-        return None
+        return definition.player_spawn if definition is not None else None
     if "player_position" not in document:
         raise ValueError("player_position is required for save format version 3")
     raw = document["player_position"]
     if raw is None:
+        if version < 4:
+            return definition.player_spawn if definition is not None else None
+        if definition is not None:
+            raise ValueError("catalog scene requires player_position")
         return None
     if type(raw) is not dict or set(raw) != {"x", "y"}:
         raise ValueError("player_position must contain exactly x and y")
     position = PlayerPosition(raw["x"], raw["y"])
-    definition = spatial_definition_for_scene(location)
     if definition is None:
         raise ValueError("player_position requires a spatial definition")
     if not can_player_occupy(definition.spec, position):
         raise ValueError("player_position is not occupiable")
+    if spatial_exit_at_cell(definition, SceneCell(position.x, position.y)) is not None:
+        raise ValueError("player_position must not occupy an exit cell")
     return position
 
 
@@ -345,7 +377,7 @@ def _validated_save_state(document, scenario):
     elif document["location"] is not None:
         raise ValueError("mapless scenario cannot restore a location")
     player_position = _decode_player_position(
-        document, version, document["location"],
+        document, version, document["location"], scenario.id,
     )
 
     if version == 0:
@@ -536,8 +568,16 @@ def _apply_village_action(state, game_map, picked, action, *, legacy_batch=False
             raise ValueError("move destination does not exist")
         if destination not in game_map.exits().values():
             raise ValueError("move destination is unreachable")
+        source = game_map.current
+        destination_definition = state.spatial_definition_for_location(destination)
+        if destination_definition is not None:
+            source_definition = state.spatial_definition_for_location(source)
+            if source_definition is not None and destination_definition.entry_spawns:
+                source_id = location_world_object_id(state.scenario.id, source)
+                if entry_spawn_from_scene(destination_definition, source_id) is None:
+                    raise ValueError("destination has no entry spawn for source scene")
+        state.transition_location(destination, source_location=source)
         game_map.current = destination
-        state.transition_location(destination)
         return False
     if isinstance(action, ExploreAction):
         available = (tuple(k for k in state.scenario.village_order if k not in picked)
@@ -549,9 +589,13 @@ def _apply_village_action(state, game_map, picked, action, *, legacy_batch=False
         return False
     if isinstance(action, DepartAction):
         if legacy_batch and len(picked) >= state.scenario.village_pick_count:
+            state.player_position = None
+            state.clear_focused_object()
             return True
         if not context.can_depart:
             raise ValueError("cannot depart from the current village state")
+        state.player_position = None
+        state.clear_focused_object()
         return True
     raise ValueError(f"unsupported village action: {action!r}")
 
@@ -1065,7 +1109,20 @@ class ConsoleController:
                 if self.state.player_position is None:
                     self._message("current scene has no player position")
                     continue
-                return movement_action_from_step(self.state.player_position, step)
+                definition = self.state.spatial_definition_for_location(
+                    self.state.location,
+                )
+                if definition is None or self.state.location is None:
+                    self._message("current scene has no spatial definition")
+                    continue
+                return canonical_action_for_spatial_step(
+                    current_scene_id=location_world_object_id(
+                        self.state.scenario.id, self.state.location,
+                    ),
+                    current_position=self.state.player_position,
+                    step=step,
+                    definition=definition,
+                )
             if low == "observe":
                 return ObserveFocusedObjectAction()
             if low == "inspect":

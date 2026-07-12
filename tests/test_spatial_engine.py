@@ -25,9 +25,9 @@ def _fingerprint(state):
 def test_game_state_owns_optional_exact_independent_position():
     one = GameState(1, scenario=load_scenario("goblin"))
     two = GameState(2, scenario=load_scenario("goblin"))
-    assert one.player_position is two.player_position is None
+    assert one.player_position == two.player_position == PlayerPosition(3, 2)
     one.player_position = PlayerPosition(1, 2)
-    assert two.player_position is None
+    assert two.player_position == PlayerPosition(3, 2)
     assert one.location != one.player_position
     for invalid in ((1, 2), {"x": 1, "y": 2}, [1, 2]):
         with pytest.raises(ValueError):
@@ -66,4 +66,15 @@ def test_movement_rejects_malformed_action_without_state_change():
     before = _fingerprint(state)
     with pytest.raises(ValueError):
         apply_player_movement(state, PlayerPosition(2, 2))
+    assert _fingerprint(state) == before
+
+
+def test_direct_movement_to_exit_cell_is_atomic():
+    state = GameState(7, scenario=load_scenario("goblin"))
+    state.player_position = PlayerPosition(3, 1)
+    before = _fingerprint(state)
+    with pytest.raises(ValueError, match="exit cell"):
+        apply_player_movement(
+            state, MovePlayerToPositionAction(PlayerPosition(3, 0)),
+        )
     assert _fingerprint(state) == before
