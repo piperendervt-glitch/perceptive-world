@@ -1,0 +1,157 @@
+from __future__ import annotations
+
+import copy
+import json
+
+import pytest
+
+from trpg_core.map import build_map
+from trpg_core.scenario_loader import load_scenario
+from trpg_core.session import (
+    CURRENT_SAVE_FORMAT_VERSION, ConsoleController, GameState,
+    make_save_document, parse_save_format_version,
+)
+from trpg_core.world import location_world_object_id
+
+
+def _state():
+    return GameState(7, scenario=load_scenario("goblin"))
+
+
+def _focus(state, location="well"):
+    state.transition_location(location)
+    object_id = location_world_object_id("goblin", location)
+    state.set_focused_object(object_id, focusable_object_ids=(object_id,))
+    return object_id
+
+
+def _fingerprint(state):
+    return {
+        "snapshot": copy.deepcopy(state.snapshot()),
+        "focus": state.focus_state.focused_object_id,
+        "rng": state.rng.state(),
+        "log": copy.deepcopy(state.log),
+    }
+
+
+@pytest.mark.parametrize("document,expected", [({}, 0), ({"format_version": 0}, 0), ({"format_version": 1}, 1)])
+def test_save_format_version_parser(document, expected):
+    assert parse_save_format_version(document) == expected
+
+
+@pytest.mark.parametrize("value", [True, False, "1", 1.0, -1, 2, None, [], {}])
+def test_save_format_version_parser_rejects_invalid_values(value):
+    with pytest.raises(ValueError, match="format_version"):
+        parse_save_format_version({"format_version": value})
+
+
+def test_canonical_save_document_always_contains_version_and_focus_without_side_effects():
+    state = _state()
+    focused = _focus(state)
+    before = _fingerprint(state)
+    document = make_save_document(state)
+    assert document["format_version"] == CURRENT_SAVE_FORMAT_VERSION == 1
+    assert document["focused_object_id"] == "goblin:location/well"
+    assert {k: document[k] for k in state.snapshot()} == state.snapshot()
+    assert _fingerprint(state) == before
+    state.clear_focused_object()
+    assert make_save_document(state)["focused_object_id"] is None
+    assert focused is not None
+
+
+def test_version1_save_load_round_trip_restores_location_focus_and_rng(tmp_path):
+    state = _state()
+    focused = _focus(state)
+    state.turn = 9
+    state.hp = 11
+    state.rng.next()
+    saved = _fingerprint(state)
+    controller = ConsoleController(state, str(tmp_path))
+    controller._save("slot")
+
+    state.transition_location("plaza")
+    state.hp = 1
+    state.turn = 99
+    state.rng.next()
+    assert controller._load("slot") is True
+    assert state.snapshot() == saved["snapshot"]
+    assert state.rng.state() == saved["rng"]
+    assert state.focus_state.focused_object_id == focused
+    assert state.location == "well"
+    assert build_map(state.scenario, state.location).current == "well"
+
+
+@pytest.mark.parametrize("explicit_version", [False, True])
+def test_legacy_save_restores_base_state_and_clears_focus(tmp_path, explicit_version):
+    source = _state()
+    source.transition_location("well")
+    source.turn = 4
+    document = source.snapshot()
+    if explicit_version:
+        document["format_version"] = 0
+    path = tmp_path / "legacy.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    live = _state()
+    _focus(live, "plaza")
+    controller = ConsoleController(live, str(tmp_path))
+    assert controller._load("legacy") is True
+    assert live.snapshot() == source.snapshot()
+    assert live.focus_state.focused_object_id is None
+
+
+def test_version1_missing_or_null_focus_clears_existing_focus(tmp_path):
+    for name, include_field in (("missing", False), ("null", True)):
+        source = _state()
+        document = source.snapshot() | {"format_version": 1}
+        if include_field:
+            document["focused_object_id"] = None
+        (tmp_path / f"{name}.json").write_text(json.dumps(document), encoding="utf-8")
+        live = _state()
+        _focus(live, "plaza")
+        assert ConsoleController(live, str(tmp_path))._load(name) is True
+        assert live.focus_state.focused_object_id is None
+
+
+@pytest.mark.parametrize("focus", [
+    True, 1, 1.0, "", " ", "broken", {}, [],
+    "other:location/well", "goblin:location/missing", "goblin:location/plaza",
+])
+def test_invalid_version1_focus_is_atomic(tmp_path, focus):
+    live = _state()
+    _focus(live, "plaza")
+    live.log.append({"t": 0, "type": "sentinel"})
+    before = _fingerprint(live)
+    document = live.snapshot() | {
+        "format_version": 1,
+        "location": "well",
+        "focused_object_id": focus,
+    }
+    (tmp_path / "bad.json").write_text(json.dumps(document), encoding="utf-8")
+    assert ConsoleController(live, str(tmp_path))._load("bad") is False
+    assert _fingerprint(live) == before
+
+
+@pytest.mark.parametrize("mutation", [
+    {"format_version": 2},
+    {"scenario_id": "other"},
+    {"rng_a": "bad"},
+    {"rng_a": -1},
+    {"hp": "bad"},
+    {"location": "missing"},
+    {"format_version": 0, "focused_object_id": None},
+])
+def test_invalid_save_document_is_atomic(tmp_path, mutation):
+    live = _state()
+    _focus(live, "plaza")
+    before = _fingerprint(live)
+    document = live.snapshot()
+    document.update(mutation)
+    (tmp_path / "invalid.json").write_text(json.dumps(document), encoding="utf-8")
+    assert ConsoleController(live, str(tmp_path))._load("invalid") is False
+    assert _fingerprint(live) == before
+
+
+def test_snapshot_schema_remains_focus_and_version_free():
+    snapshot = _state().snapshot()
+    assert not {"format_version", "focused_object_id", "focus", "focus_state", "world_objects"} & snapshot.keys()

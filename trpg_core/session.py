@@ -19,7 +19,7 @@ import json
 import os
 import sys
 from collections import deque
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 
 from .combat import run_combat
 from .input_actions import (
@@ -49,6 +49,8 @@ from .world import (
     clear_focus as resolve_clear_focus,
     focusable_world_object_ids_for_current_location,
     location_world_object_id,
+    parse_world_object_id,
+    serialize_world_object_id,
     set_focus as resolve_set_focus,
 )
 
@@ -60,6 +62,9 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
 RELOAD = "__reload__"
 DEFAULT_SCENARIO = "goblin"
+LEGACY_SAVE_FORMAT_VERSION = 0
+CURRENT_SAVE_FORMAT_VERSION = 1
+SUPPORTED_SAVE_FORMAT_VERSIONS = frozenset({0, 1})
 
 # 村の地図移動の方角エイリアス（英語/略/日本語）。地図移動は乱数を消費しない（UI のみ）。
 _DIR_ALIAS = {
@@ -177,6 +182,94 @@ class GameState:
                 setattr(self, k, snap[k])
         self.rng.set_state(snap["rng_a"])
         self.clear_focused_object()
+
+
+def parse_save_format_version(document: Mapping[str, object]) -> int:
+    """Parse the save schema version independently from record/replay versions."""
+    if not isinstance(document, Mapping):
+        raise ValueError("save document must be an object")
+    if "format_version" not in document:
+        return LEGACY_SAVE_FORMAT_VERSION
+    version = document["format_version"]
+    if type(version) is not int or version not in SUPPORTED_SAVE_FORMAT_VERSIONS:
+        raise ValueError(f"unsupported save format_version: {version!r}")
+    return version
+
+
+def make_save_document(state: GameState) -> dict:
+    """Compose canonical v1 save metadata around the unchanged snapshot schema."""
+    document = state.snapshot()
+    document["format_version"] = CURRENT_SAVE_FORMAT_VERSION
+    focused = state.focus_state.focused_object_id
+    document["focused_object_id"] = (
+        serialize_world_object_id(focused) if focused is not None else None
+    )
+    return document
+
+
+def _validated_save_state(document, scenario):
+    """Validate into an isolated state and return it plus validated focus."""
+    version = parse_save_format_version(document)
+    if document.get("scenario_id") != scenario.id:
+        raise ValueError("save scenario_id does not match the active scenario")
+    for field in GameState._SNAP_FIELDS + ("scenario_id", "rng_a"):
+        if field not in document:
+            raise ValueError(f"save field is missing: {field}")
+    baseline = GameState(0, scenario=scenario).snapshot()
+    for field in GameState._SNAP_FIELDS:
+        expected = baseline[field]
+        value = document[field]
+        if isinstance(expected, bool):
+            valid = type(value) is bool
+        elif isinstance(expected, int):
+            valid = type(value) is int
+        elif isinstance(expected, list):
+            valid = isinstance(value, list)
+        elif expected is None:
+            valid = value is None or isinstance(value, str)
+        else:
+            valid = isinstance(value, type(expected))
+        if not valid:
+            raise ValueError(f"invalid save field type: {field}")
+    if (type(document["rng_a"]) is not int
+            or not 0 <= document["rng_a"] <= 0xFFFFFFFF):
+        raise ValueError("rng_a must be a 32-bit unsigned integer")
+    if document["node"] not in scenario.nodes:
+        raise ValueError("saved node does not exist")
+    if scenario.has_map:
+        if document["location"] not in scenario.map_locations:
+            raise ValueError("saved location does not exist")
+    elif document["location"] is not None:
+        raise ValueError("mapless scenario cannot restore a location")
+
+    if version == 0:
+        if "focused_object_id" in document:
+            raise ValueError("save format version 0 cannot contain focused_object_id")
+        focused = None
+    else:
+        raw_focus = document.get("focused_object_id")
+        if raw_focus is None:
+            focused = None
+        elif type(raw_focus) is str:
+            focused = parse_world_object_id(raw_focus)
+        else:
+            raise ValueError("focused_object_id must be a string or null")
+
+    candidate = GameState(document["seed"], scenario=scenario)
+    candidate.restore(dict(document))
+    if focused is not None:
+        if not scenario.has_map:
+            raise ValueError("focused_object_id requires an active map")
+        from .map import build_map
+        game_map = build_map(scenario, candidate.location)
+        specs = build_map_location_world_object_specs(scenario.id, game_map)
+        focusable = focusable_world_object_ids_for_current_location(
+            scenario.id, game_map, specs,
+        )
+        candidate.set_focused_object(focused, focusable_object_ids=focusable)
+    else:
+        candidate.clear_focused_object()
+    return candidate, focused
 
 
 # ---------------------------------------------------------------------------
@@ -1084,7 +1177,7 @@ class ConsoleController:
         os.makedirs(self.save_dir, exist_ok=True)
         path = os.path.join(self.save_dir, f"{name}.json")
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.state.snapshot(), f, ensure_ascii=False, indent=1)
+            json.dump(make_save_document(self.state), f, ensure_ascii=False, indent=1)
         self._message(f"[セーブ] {path}")
 
     def _load(self, name) -> bool:
@@ -1092,10 +1185,26 @@ class ConsoleController:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 snap = json.load(f)
+            candidate, focused = _validated_save_state(snap, self.state.scenario)
         except OSError:
             self._message(f"[ロード失敗] {path} が見つからない")
             return False
-        self.state.restore(snap)
+        except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+            self._message(f"[ロード失敗] {exc}")
+            return False
+        self.state.restore(candidate.snapshot())
+        if focused is None:
+            self.state.clear_focused_object()
+        else:
+            from .map import build_map
+            game_map = build_map(self.state.scenario, self.state.location)
+            specs = build_map_location_world_object_specs(
+                self.state.scenario.id, game_map,
+            )
+            focusable = focusable_world_object_ids_for_current_location(
+                self.state.scenario.id, game_map, specs,
+            )
+            self.state.set_focused_object(focused, focusable_object_ids=focusable)
         self._message(f"[ロード] {path}（rng 状態も復元）")
         return True
 
