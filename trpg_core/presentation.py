@@ -12,9 +12,8 @@ from typing import Any, Iterable
 
 from .rules import modifier
 from .world import (
-    build_map_location_world_object_specs,
-    focusable_world_object_ids_for_current_location,
     serialize_world_object_id,
+    world_objects_for_current_scene,
 )
 
 
@@ -182,20 +181,24 @@ def build_render_snapshot(
     world_objects: tuple[WorldObjectView, ...] = ()
     focused_object_id = None
     if active_game_map is not None:
-        specs = build_map_location_world_object_specs(state.scenario.id, active_game_map)
-        focusable_ids = focusable_world_object_ids_for_current_location(
-            state.scenario.id, active_game_map, specs,
+        scene_objects = world_objects_for_current_scene(
+            scenario_id=state.scenario.id, game_map=active_game_map,
         )
-        specs_by_id = {spec.object_id: spec for spec in specs}
         world_objects = tuple(
             WorldObjectView(
-                object_id=serialize_world_object_id(object_id),
-                kind=specs_by_id[object_id].kind,
-                label=specs_by_id[object_id].label,
+                object_id=serialize_world_object_id(item.spec.object_id),
+                kind=item.spec.kind,
+                label=item.spec.label,
             )
-            for object_id in focusable_ids
+            for item in scene_objects
+            if item.visibility.perceived
         )
         if focused_id is not None:
+            focusable_ids = tuple(
+                item.spec.object_id
+                for item in scene_objects
+                if item.visibility.focus_candidate
+            )
             if focused_id not in focusable_ids:
                 raise ValueError("focused object is not in the current scene")
             focused_object_id = serialize_world_object_id(focused_id)

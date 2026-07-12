@@ -45,7 +45,6 @@ from .scenario_loader import load_scenario
 from .world import (
     FocusState,
     WorldObjectId,
-    build_map_location_world_object_specs,
     clear_focus as resolve_clear_focus,
     focusable_world_object_ids_for_current_location,
     location_world_object_id,
@@ -262,9 +261,8 @@ def _validated_save_state(document, scenario):
             raise ValueError("focused_object_id requires an active map")
         from .map import build_map
         game_map = build_map(scenario, candidate.location)
-        specs = build_map_location_world_object_specs(scenario.id, game_map)
         focusable = focusable_world_object_ids_for_current_location(
-            scenario.id, game_map, specs,
+            scenario.id, game_map,
         )
         candidate.set_focused_object(focused, focusable_object_ids=focusable)
     else:
@@ -359,8 +357,7 @@ def _village_context(state, game_map, picked) -> VillageInputContext:
         explore_keys = tuple(k for k in sc.village_order if k not in picked)
         can_depart = len(picked) >= sc.village_pick_count
     else:
-        specs = build_map_location_world_object_specs(sc.id, game_map)
-        focusable = focusable_world_object_ids_for_current_location(sc.id, game_map, specs)
+        focusable = focusable_world_object_ids_for_current_location(sc.id, game_map)
         current_id = location_world_object_id(sc.id, game_map.current)
         moves = tuple(
             (direction, location_world_object_id(sc.id, destination))
@@ -1198,11 +1195,8 @@ class ConsoleController:
         else:
             from .map import build_map
             game_map = build_map(self.state.scenario, self.state.location)
-            specs = build_map_location_world_object_specs(
-                self.state.scenario.id, game_map,
-            )
             focusable = focusable_world_object_ids_for_current_location(
-                self.state.scenario.id, game_map, specs,
+                self.state.scenario.id, game_map,
             )
             self.state.set_focused_object(focused, focusable_object_ids=focusable)
         self._message(f"[ロード] {path}（rng 状態も復元）")
