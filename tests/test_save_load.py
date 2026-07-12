@@ -12,6 +12,8 @@ from trpg_core.session import (
     make_save_document, parse_save_format_version,
 )
 from trpg_core.world import location_world_object_id
+from trpg_core.lod import ObjectAttentionState, ObjectLodState
+from trpg_core.lod_actions import LodRuntimeState, ObjectLodProgress
 
 
 def _state():
@@ -34,12 +36,12 @@ def _fingerprint(state):
     }
 
 
-@pytest.mark.parametrize("document,expected", [({}, 0), ({"format_version": 0}, 0), ({"format_version": 1}, 1)])
+@pytest.mark.parametrize("document,expected", [({}, 0), ({"format_version": 0}, 0), ({"format_version": 1}, 1), ({"format_version": 2}, 2)])
 def test_save_format_version_parser(document, expected):
     assert parse_save_format_version(document) == expected
 
 
-@pytest.mark.parametrize("value", [True, False, "1", 1.0, -1, 2, None, [], {}])
+@pytest.mark.parametrize("value", [True, False, "1", 1.0, -1, 3, None, [], {}])
 def test_save_format_version_parser_rejects_invalid_values(value):
     with pytest.raises(ValueError, match="format_version"):
         parse_save_format_version({"format_version": value})
@@ -50,7 +52,8 @@ def test_canonical_save_document_always_contains_version_and_focus_without_side_
     focused = _focus(state)
     before = _fingerprint(state)
     document = make_save_document(state)
-    assert document["format_version"] == CURRENT_SAVE_FORMAT_VERSION == 1
+    assert document["format_version"] == CURRENT_SAVE_FORMAT_VERSION == 2
+    assert document["lod_runtime"] == []
     assert document["focused_object_id"] == "goblin:location/well"
     assert {k: document[k] for k in state.snapshot()} == state.snapshot()
     assert _fingerprint(state) == before
@@ -154,4 +157,42 @@ def test_invalid_save_document_is_atomic(tmp_path, mutation):
 
 def test_snapshot_schema_remains_focus_and_version_free():
     snapshot = _state().snapshot()
-    assert not {"format_version", "focused_object_id", "focus", "focus_state", "world_objects"} & snapshot.keys()
+    assert not {"format_version", "focused_object_id", "focus", "focus_state", "world_objects", "lod_runtime"} & snapshot.keys()
+
+
+def test_save_v2_round_trip_persists_only_lod_runtime_primitives(tmp_path):
+    state = _state()
+    well = _focus(state)
+    state.lod_runtime = LodRuntimeState((ObjectLodProgress(
+        well, ObjectAttentionState(3), ObjectLodState(2),
+    ),))
+    document = make_save_document(state)
+    assert document["lod_runtime"] == [{
+        "object_id": "goblin:location/well",
+        "attention_level": 3,
+        "unlocked_lod_cap": 2,
+    }]
+    assert not {"current_lod", "facts", "labels"} & document["lod_runtime"][0].keys()
+    controller = ConsoleController(state, str(tmp_path))
+    controller._save("lod")
+    state.lod_runtime = LodRuntimeState()
+    assert controller._load("lod") is True
+    assert state.lod_runtime == LodRuntimeState((ObjectLodProgress(
+        well, ObjectAttentionState(3), ObjectLodState(2),
+    ),))
+
+
+@pytest.mark.parametrize("payload", [
+    None, {}, [True],
+    [{"object_id": "goblin:location/well", "attention_level": True, "unlocked_lod_cap": 1}],
+    [{"object_id": "goblin:location/well", "attention_level": 1, "unlocked_lod_cap": 4}],
+    [{"object_id": "other:location/well", "attention_level": 1, "unlocked_lod_cap": 1}],
+])
+def test_invalid_save_v2_lod_runtime_is_atomic(tmp_path, payload):
+    live = _state()
+    before = _fingerprint(live) | {"lod_runtime": live.lod_runtime}
+    document = make_save_document(live)
+    document["lod_runtime"] = payload
+    (tmp_path / "badlod.json").write_text(json.dumps(document), encoding="utf-8")
+    assert ConsoleController(live, str(tmp_path))._load("badlod") is False
+    assert _fingerprint(live) | {"lod_runtime": live.lod_runtime} == before

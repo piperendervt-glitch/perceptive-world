@@ -50,7 +50,7 @@ def test_input_models_are_frozen_and_validate_values():
         DirectCommand("help")
 
 
-def test_canonical_lod_actions_are_frozen_and_separate_from_village_events():
+def test_canonical_lod_actions_are_frozen_and_part_of_village_events():
     import typing
     from trpg_core.input_actions import VillageControllerEvent
 
@@ -62,8 +62,10 @@ def test_canonical_lod_actions_are_frozen_and_separate_from_village_events():
     for action in actions:
         with pytest.raises(FrozenInstanceError):
             action.extra = "raw input"
-    assert all(type(action) not in typing.get_args(VillageControllerEvent)
-               for action in actions)
+    village_types = set()
+    for member in typing.get_args(VillageControllerEvent):
+        village_types.update(typing.get_args(member) or (member,))
+    assert all(type(action) in village_types for action in actions)
 
 
 @pytest.mark.parametrize("target", [-1, True, False, 1.0, "1", None])

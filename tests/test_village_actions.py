@@ -6,7 +6,8 @@ import builtins
 import pytest
 
 from trpg_core.input_actions import (
-    ClearFocusAction, DepartAction, ExploreAction, MoveToLocationAction,
+    ApplyLodUnlockAction, ClearFocusAction, DepartAction, ExploreAction,
+    InspectFocusedObjectAction, MoveToLocationAction, ObserveFocusedObjectAction,
     SetFocusAction,
 )
 from trpg_core.map import build_map
@@ -28,7 +29,18 @@ def _setup():
 
 
 def _fingerprint(state, game_map):
-    return copy.deepcopy(state.snapshot()), state.rng.state(), copy.deepcopy(state.log), game_map.current
+    return (
+        copy.deepcopy(state.snapshot()), state.rng.state(), copy.deepcopy(state.log),
+        game_map.current, state.focus_state, state.lod_runtime,
+    )
+
+
+def test_game_state_owns_independent_exact_lod_runtime_values():
+    first, _ = _setup()
+    second, _ = _setup()
+    assert first.lod_runtime is not second.lod_runtime
+    with pytest.raises(ValueError, match="LodRuntimeState"):
+        first.lod_runtime = {}
 
 
 def test_shared_move_and_focus_guards_apply_canonical_events():
@@ -47,10 +59,27 @@ def test_shared_move_and_focus_guards_apply_canonical_events():
     assert picked == ["well"]
 
 
+def test_shared_dispatcher_applies_lod_actions_to_engine_owned_runtime():
+    state, game_map = _setup()
+    well = location_world_object_id("goblin", "well")
+    game_map.current = "well"
+    state.transition_location("well")
+    assert not _apply_village_action(state, game_map, [], SetFocusAction(well))
+    assert not _apply_village_action(state, game_map, [], ObserveFocusedObjectAction())
+    progress = state.lod_runtime.objects[0]
+    assert progress.object_id == well and progress.attention.attention_level == 1
+    assert not _apply_village_action(state, game_map, [], InspectFocusedObjectAction())
+    assert state.lod_runtime.objects[0].attention.attention_level == 3
+    assert not _apply_village_action(state, game_map, [], ApplyLodUnlockAction(well, 3))
+    assert state.lod_runtime.objects[0].lod_state.unlocked_lod_cap == 3
+
+
 @pytest.mark.parametrize("action", [
     MoveToLocationAction(location_world_object_id("other", "well")),
     MoveToLocationAction(location_world_object_id("goblin", "forest_gate")),
     SetFocusAction(location_world_object_id("goblin", "well")),
+    ObserveFocusedObjectAction(),
+    ApplyLodUnlockAction(location_world_object_id("goblin", "well"), 1),
 ])
 def test_invalid_canonical_events_are_rejected_before_state_change(action):
     state, game_map = _setup()
@@ -63,18 +92,39 @@ def test_invalid_canonical_events_are_rejected_before_state_change(action):
 def test_recording_controller_serializes_canonical_event_order():
     well = location_world_object_id("goblin", "well")
     events = iter((MoveToLocationAction(well), SetFocusAction(well),
-                   ClearFocusAction(), ExploreAction("well"), DepartAction()))
+                   ObserveFocusedObjectAction(), InspectFocusedObjectAction(),
+                   ApplyLodUnlockAction(well, 3), ClearFocusAction(),
+                   ExploreAction("well"), DepartAction()))
     class Base:
         def village_action(self, context, **display):
             return next(events)
     recorder = RecordingController(Base(), load_scenario("goblin"))
-    returned = [recorder.village_action(None) for _ in range(5)]
+    returned = []
+    for _ in range(8):
+        event = recorder.village_action(None)
+        returned.append(event)
+        recorder.village_event_applied(event)
     assert returned == [MoveToLocationAction(well), SetFocusAction(well),
-                        ClearFocusAction(), ExploreAction("well"), DepartAction()]
+                        ObserveFocusedObjectAction(), InspectFocusedObjectAction(),
+                        ApplyLodUnlockAction(well, 3), ClearFocusAction(),
+                        ExploreAction("well"), DepartAction()]
     assert recorder.inputs == [
         "move-to:goblin:location/well", "focus:set:goblin:location/well",
+        "observe", "inspect", "lod-unlock:goblin:location/well:3",
         "focus:clear", "explore:well", "depart",
     ]
+
+
+def test_recording_controller_does_not_commit_rejected_village_event():
+    state, game_map = _setup()
+    class Base:
+        def village_action(self, context, **display):
+            return ObserveFocusedObjectAction()
+    recorder = RecordingController(Base(), state.scenario)
+    event = recorder.village_action(_village_context(state, game_map, []))
+    with pytest.raises(ValueError, match="focused_object_id"):
+        _apply_village_action(state, game_map, [], event)
+    assert recorder.inputs == []
 
 
 def test_fixture_controller_v1_restores_one_event_at_a_time_without_state_changes():
@@ -93,10 +143,28 @@ def test_fixture_controller_v1_restores_one_event_at_a_time_without_state_change
     controller.assert_all_events_consumed()
 
 
+def test_fixture_controller_v2_restores_lod_events_without_state_changes():
+    scenario = load_scenario("goblin")
+    tokens = ["observe", "inspect", "lod-unlock:goblin:location/well:3"]
+    controller = FixtureController(tokens, scenario, format_version=2)
+    state, game_map = _setup()
+    context = _village_context(state, game_map, [])
+    before = _fingerprint(state, game_map)
+    events = [controller.village_action(context) for _ in tokens]
+    assert events == [
+        ObserveFocusedObjectAction(), InspectFocusedObjectAction(),
+        ApplyLodUnlockAction(location_world_object_id("goblin", "well"), 3),
+    ]
+    assert _fingerprint(state, game_map) == before
+    controller.assert_all_events_consumed()
+
+
 @pytest.mark.parametrize("raw, expected_type", [
     ("north", MoveToLocationAction),
     ("focus next", SetFocusAction),
     ("focus clear", ClearFocusAction),
+    ("observe", ObserveFocusedObjectAction),
+    ("inspect", InspectFocusedObjectAction),
 ])
 def test_console_returns_one_canonical_event_without_applying_it(monkeypatch, raw, expected_type):
     state, game_map = _setup()

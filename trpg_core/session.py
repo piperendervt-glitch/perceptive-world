@@ -23,12 +23,15 @@ from collections.abc import Collection, Mapping
 
 from .combat import run_combat
 from .input_actions import (
+    ApplyLodUnlockAction,
     ClearFocusAction,
     DepartAction,
     DirectCommand,
     ExploreAction,
+    InspectFocusedObjectAction,
     MetaRequest,
     MoveToLocationAction,
+    ObserveFocusedObjectAction,
     SelectMenuIndex,
     SetFocusAction,
     VillageInputContext,
@@ -51,7 +54,11 @@ from .world import (
     parse_world_object_id,
     serialize_world_object_id,
     set_focus as resolve_set_focus,
+    world_objects_for_current_scene,
 )
+from .lod import ObjectAttentionState, ObjectLodState
+from .lod_actions import LodRuntimeState, ObjectLodProgress, apply_lod_action
+from .lod_content import lod_content_for_world_object
 
 # Windows console default cp932 chokes on CJK output; force UTF-8（resolve.py と同流儀）。
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -62,8 +69,8 @@ LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
 RELOAD = "__reload__"
 DEFAULT_SCENARIO = "goblin"
 LEGACY_SAVE_FORMAT_VERSION = 0
-CURRENT_SAVE_FORMAT_VERSION = 1
-SUPPORTED_SAVE_FORMAT_VERSIONS = frozenset({0, 1})
+CURRENT_SAVE_FORMAT_VERSION = 2
+SUPPORTED_SAVE_FORMAT_VERSIONS = frozenset({0, 1, 2})
 
 # 村の地図移動の方角エイリアス（英語/略/日本語）。地図移動は乱数を消費しない（UI のみ）。
 _DIR_ALIAS = {
@@ -81,6 +88,16 @@ _DIR_LABEL = {"north": "北", "east": "東", "south": "南", "west": "西"}
 # ---------------------------------------------------------------------------
 
 class GameState:
+    @property
+    def lod_runtime(self) -> LodRuntimeState:
+        return self._lod_runtime
+
+    @lod_runtime.setter
+    def lod_runtime(self, value: LodRuntimeState) -> None:
+        if not isinstance(value, LodRuntimeState):
+            raise ValueError("lod_runtime must be a LodRuntimeState")
+        self._lod_runtime = value
+
     def __init__(self, seed: int, scenario=None):
         # シナリオ（データ）を読む。char/敵/ノードはすべてここから来る。
         if scenario is None:
@@ -109,6 +126,7 @@ class GameState:
         self.respawn_on_defeat = False
         self.log: list[dict] = []
         self.focus_state = FocusState()
+        self.lod_runtime = LodRuntimeState()
         # 表示専用フック（対話プレイでのみ設定）。**ログには一切影響しない**——
         # scripted/policy では None のままなので回帰ログはバイト単位で不変（seed=7 保証）。
         self.presenter = None
@@ -203,12 +221,51 @@ def make_save_document(state: GameState) -> dict:
     document["focused_object_id"] = (
         serialize_world_object_id(focused) if focused is not None else None
     )
+    document["lod_runtime"] = [
+        {
+            "object_id": serialize_world_object_id(progress.object_id),
+            "attention_level": progress.attention.attention_level,
+            "unlocked_lod_cap": progress.lod_state.unlocked_lod_cap,
+        }
+        for progress in state.lod_runtime.objects
+    ]
     return document
+
+
+def _decode_lod_runtime(document, version):
+    if version < 2:
+        if "lod_runtime" in document:
+            raise ValueError("legacy save cannot contain lod_runtime")
+        return LodRuntimeState()
+    raw = document.get("lod_runtime")
+    if type(raw) is not list:
+        raise ValueError("lod_runtime must be an array")
+    entries = []
+    for item in raw:
+        if type(item) is not dict or set(item) != {
+            "object_id", "attention_level", "unlocked_lod_cap",
+        }:
+            raise ValueError("invalid lod_runtime entry")
+        object_id = parse_world_object_id(item["object_id"])
+        content = lod_content_for_world_object(object_id)
+        if content is None:
+            raise ValueError("LOD runtime object has no content")
+        attention = item["attention_level"]
+        cap = item["unlocked_lod_cap"]
+        if type(attention) is not int or attention < 0:
+            raise ValueError("attention_level must be a non-negative int")
+        if type(cap) is not int or cap < 0 or cap > content.lod_spec.max_lod:
+            raise ValueError("unlocked_lod_cap is outside content range")
+        entries.append(ObjectLodProgress(
+            object_id, ObjectAttentionState(attention), ObjectLodState(cap),
+        ))
+    return LodRuntimeState(tuple(entries))
 
 
 def _validated_save_state(document, scenario):
     """Validate into an isolated state and return it plus validated focus."""
     version = parse_save_format_version(document)
+    lod_runtime = _decode_lod_runtime(document, version)
     if document.get("scenario_id") != scenario.id:
         raise ValueError("save scenario_id does not match the active scenario")
     for field in GameState._SNAP_FIELDS + ("scenario_id", "rng_a"):
@@ -256,6 +313,7 @@ def _validated_save_state(document, scenario):
 
     candidate = GameState(document["seed"], scenario=scenario)
     candidate.restore(dict(document))
+    candidate.lod_runtime = lod_runtime
     if focused is not None:
         if not scenario.has_map:
             raise ValueError("focused_object_id requires an active map")
@@ -393,6 +451,23 @@ def _apply_village_action(state, game_map, picked, action, *, legacy_batch=False
     if isinstance(action, ClearFocusAction):
         state.clear_focused_object()
         return False
+    if isinstance(action, (
+        ObserveFocusedObjectAction, InspectFocusedObjectAction, ApplyLodUnlockAction,
+    )):
+        scene_object_ids = tuple(
+            item.spec.object_id
+            for item in world_objects_for_current_scene(
+                scenario_id=state.scenario.id, game_map=game_map,
+            )
+        )
+        state.lod_runtime = apply_lod_action(
+            state.lod_runtime,
+            action,
+            focused_object_id=context.focused_object_id,
+            focusable_object_ids=context.focusable_object_ids,
+            scene_object_ids=scene_object_ids,
+        )
+        return False
     if isinstance(action, MoveToLocationAction):
         if game_map is None:
             raise ValueError("move requires an active map")
@@ -448,6 +523,8 @@ def _run_village(state: GameState, controller, *, on_village_event_applied=None)
         departed = _apply_village_action(
                 state, game_map, picked, action,
                 legacy_batch=bool(getattr(controller, "legacy_village_batch", False)))
+        if hasattr(controller, "village_event_applied"):
+            controller.village_event_applied(action)
         if on_village_event_applied is not None:
             on_village_event_applied(action, state.focus_state.focused_object_id)
         if departed:
@@ -683,6 +760,7 @@ class ConsoleController:
         )
         model = screen_model_from_snapshot(build_render_snapshot(
             self.state, context, active_game_map=game_map,
+            lod_runtime=self.state.lod_runtime,
         ))
         return self.tui.draw(model)
 
@@ -918,6 +996,10 @@ class ConsoleController:
                 self._message("中断する."); sys.exit(0)
             if meta == "handled":
                 continue
+            if low == "observe":
+                return ObserveFocusedObjectAction()
+            if low == "inspect":
+                return InspectFocusedObjectAction()
             try:
                 focus = resolve_focus_command(
                     low,
@@ -1190,6 +1272,7 @@ class ConsoleController:
             self._message(f"[ロード失敗] {exc}")
             return False
         self.state.restore(candidate.snapshot())
+        self.state.lod_runtime = candidate.lod_runtime
         if focused is None:
             self.state.clear_focused_object()
         else:

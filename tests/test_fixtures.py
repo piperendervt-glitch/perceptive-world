@@ -76,7 +76,7 @@ def test_all_fixtures_replay_state():
 
 def test_record_replay_roundtrip():
     for name, fx in _all_fixtures():
-        if fx.get("format_version") == 1:
+        if fx.get("format_version") in {1, 2}:
             ok, actual, diff = replay_fixture(fx, mode="full")
             assert ok and actual == fx["expected_log"], f"{name}: v1 replay不一致 -> {diff}"
             continue
@@ -108,6 +108,24 @@ def test_focus_v1_fixture_is_canonical_and_has_focus_expectation():
                for token in fx["inputs"])
     ok, actual, diff = replay_fixture(fx, mode="full")
     assert ok and actual == fx["expected_log"], diff
+
+
+def test_lod_v2_fixture_reaches_final_lod_with_canonical_traces():
+    fx = load_fixture(os.path.join(FIXTURE_DIR, "lod_play_v2.json"))
+    assert fx["format_version"] == 2
+    assert fx["inputs"].count("observe") == 2
+    assert fx["inputs"].count("inspect") == 2
+    assert fx["expected_focus_trace"] == ["goblin:location/well"]
+    assert fx["expected_lod_trace"][-1] == [{
+        "object_id": "goblin:location/well",
+        "attention_level": 6,
+        "unlocked_lod_cap": 3,
+        "current_lod": 3,
+    }]
+    first = replay_fixture(fx, mode="full")
+    second = replay_fixture(fx, mode="full")
+    assert first == second
+    assert first[0] and first[1] == fx["expected_log"]
 
 
 # ---------------------------------------------------------------------------

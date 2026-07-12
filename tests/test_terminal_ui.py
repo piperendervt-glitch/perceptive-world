@@ -103,6 +103,7 @@ def test_render_screen_stays_within_terminal_bounds():
     lines = screen.splitlines()
     assert len(lines) <= 20
     assert all(display_width(line) <= 60 for line in lines)
+    assert "observe" in screen and "inspect" in screen
     assert "村の広場" in screen
     assert "HP 20/20" in screen
     assert "目的:" in screen
@@ -345,8 +346,11 @@ def test_normal_tui_path_builds_render_snapshot_without_side_effects(monkeypatch
     seen = []
     original = presentation.build_render_snapshot
 
-    def spy(state_arg, context, *, active_game_map=None):
-        result = original(state_arg, context, active_game_map=active_game_map)
+    def spy(state_arg, context, *, active_game_map=None, lod_runtime=None):
+        result = original(
+            state_arg, context, active_game_map=active_game_map,
+            lod_runtime=lod_runtime,
+        )
         seen.append(result)
         return result
 
