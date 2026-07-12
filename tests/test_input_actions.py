@@ -12,8 +12,9 @@ from dataclasses import FrozenInstanceError
 
 from trpg_core.input_actions import (
     ClearFocusAction, DepartAction, ExploreAction, MoveToLocationAction,
-    SetFocusAction, resolve_focus_command, resolve_move_action,
+    MovePlayerToPositionAction, SetFocusAction, resolve_focus_command, resolve_move_action,
 )
+from trpg_core.spatial import PlayerPosition
 from trpg_core.world import WorldObjectId
 
 from trpg_core.input_actions import (
@@ -48,6 +49,22 @@ def test_input_models_are_frozen_and_validate_values():
         DirectCommand("1")
     with pytest.raises(ValueError):
         DirectCommand("help")
+
+
+def test_spatial_action_is_frozen_strict_and_not_a_village_event():
+    import typing
+    from trpg_core.input_actions import VillageControllerEvent
+
+    action = MovePlayerToPositionAction(PlayerPosition(2, 2))
+    assert {field.name for field in dataclasses.fields(action)} == {"destination"}
+    with pytest.raises(FrozenInstanceError):
+        action.destination = PlayerPosition(1, 2)
+    with pytest.raises(ValueError):
+        MovePlayerToPositionAction((2, 2))
+    village_types = set()
+    for member in typing.get_args(VillageControllerEvent):
+        village_types.update(typing.get_args(member) or (member,))
+    assert MovePlayerToPositionAction not in village_types
 
 
 def test_canonical_lod_actions_are_frozen_and_part_of_village_events():

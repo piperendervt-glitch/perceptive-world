@@ -19,6 +19,7 @@ from trpg_core.session import (
 )
 from trpg_core.session import ConsoleController
 from trpg_core.world import location_world_object_id
+from trpg_core.spatial import PlayerPosition
 
 
 def _setup():
@@ -31,7 +32,7 @@ def _setup():
 def _fingerprint(state, game_map):
     return (
         copy.deepcopy(state.snapshot()), state.rng.state(), copy.deepcopy(state.log),
-        game_map.current, state.focus_state, state.lod_runtime,
+        game_map.current, state.focus_state, state.lod_runtime, state.player_position,
     )
 
 
@@ -54,9 +55,22 @@ def test_shared_move_and_focus_guards_apply_canonical_events():
     assert state.rng.state() == before[1] and state.log == before[2]
     assert not _apply_village_action(state, game_map, picked, MoveToLocationAction(well))
     assert state.location == game_map.current == "well"
+    assert state.player_position == PlayerPosition(1, 2)
     assert state.focus_state.focused_object_id is None
     assert not _apply_village_action(state, game_map, picked, ExploreAction("well"))
     assert picked == ["well"]
+
+
+def test_coarse_scene_transition_sets_spawn_then_clears_position():
+    state, game_map = _setup()
+    picked = []
+    well = location_world_object_id("goblin", "well")
+    plaza = location_world_object_id("goblin", "plaza")
+    assert not _apply_village_action(state, game_map, picked, MoveToLocationAction(well))
+    assert state.player_position == PlayerPosition(1, 2)
+    assert not _apply_village_action(state, game_map, picked, MoveToLocationAction(plaza))
+    assert state.location == game_map.current == "plaza"
+    assert state.player_position is None
 
 
 def test_shared_dispatcher_applies_lod_actions_to_engine_owned_runtime():

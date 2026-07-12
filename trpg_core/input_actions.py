@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Literal, TypeAlias, cast
 
 from .world import WorldObjectId
+from .spatial import PlayerPosition
 
 MetaCommand: TypeAlias = Literal["status", "help", "save", "load", "quit"]
 MoveDirection: TypeAlias = Literal["north", "east", "south", "west"]
@@ -79,6 +80,18 @@ InputToken: TypeAlias = SelectMenuIndex | DirectCommand | MetaRequest
 @dataclass(frozen=True)
 class MoveToLocationAction:
     destination_object_id: WorldObjectId
+
+
+@dataclass(frozen=True)
+class MovePlayerToPositionAction:
+    destination: PlayerPosition
+
+    def __post_init__(self) -> None:
+        if type(self.destination) is not PlayerPosition:
+            raise ValueError("destination must be a PlayerPosition")
+
+
+SpatialCanonicalAction: TypeAlias = MovePlayerToPositionAction
 
 
 @dataclass(frozen=True)

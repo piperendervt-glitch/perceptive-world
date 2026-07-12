@@ -59,6 +59,8 @@ from .world import (
 from .lod import ObjectAttentionState, ObjectLodState
 from .lod_actions import LodRuntimeState, ObjectLodProgress, apply_lod_action
 from .lod_content import lod_content_for_world_object
+from .spatial import PlayerPosition, can_player_occupy
+from .spatial_content import spatial_definition_for_scene
 
 # Windows console default cp932 chokes on CJK output; force UTF-8（resolve.py と同流儀）。
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -69,8 +71,8 @@ LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
 RELOAD = "__reload__"
 DEFAULT_SCENARIO = "goblin"
 LEGACY_SAVE_FORMAT_VERSION = 0
-CURRENT_SAVE_FORMAT_VERSION = 2
-SUPPORTED_SAVE_FORMAT_VERSIONS = frozenset({0, 1, 2})
+CURRENT_SAVE_FORMAT_VERSION = 3
+SUPPORTED_SAVE_FORMAT_VERSIONS = frozenset({0, 1, 2, 3})
 
 # 村の地図移動の方角エイリアス（英語/略/日本語）。地図移動は乱数を消費しない（UI のみ）。
 _DIR_ALIAS = {
@@ -89,6 +91,16 @@ _DIR_LABEL = {"north": "北", "east": "東", "south": "南", "west": "西"}
 
 class GameState:
     @property
+    def player_position(self) -> PlayerPosition | None:
+        return self._player_position
+
+    @player_position.setter
+    def player_position(self, value: PlayerPosition | None) -> None:
+        if value is not None and type(value) is not PlayerPosition:
+            raise ValueError("player_position must be a PlayerPosition or None")
+        self._player_position = value
+
+    @property
     def lod_runtime(self) -> LodRuntimeState:
         return self._lod_runtime
 
@@ -98,7 +110,7 @@ class GameState:
             raise ValueError("lod_runtime must be a LodRuntimeState")
         self._lod_runtime = value
 
-    def __init__(self, seed: int, scenario=None):
+    def __init__(self, seed: int, scenario=None, *, player_position=None):
         # シナリオ（データ）を読む。char/敵/ノードはすべてここから来る。
         if scenario is None:
             scenario = load_scenario(DEFAULT_SCENARIO)
@@ -122,6 +134,7 @@ class GameState:
         self.node = scenario.start_node
         # 村の現在地（地図の真実源＝GameMap の current をここに永続化。save/load 対象）。
         self.location = scenario.map_start if getattr(scenario, "has_map", False) else None
+        self.player_position = player_position
         self.started = False
         self.respawn_on_defeat = False
         self.log: list[dict] = []
@@ -164,6 +177,12 @@ class GameState:
         if location == self.location:
             return
         self.location = location
+        definition = (
+            spatial_definition_for_scene(location) if location is not None else None
+        )
+        self.player_position = (
+            definition.player_spawn if definition is not None else None
+        )
         self.clear_focused_object()
 
     def reset_for_village(self) -> None:
@@ -229,6 +248,10 @@ def make_save_document(state: GameState) -> dict:
         }
         for progress in state.lod_runtime.objects
     ]
+    position = state.player_position
+    document["player_position"] = (
+        {"x": position.x, "y": position.y} if position is not None else None
+    )
     return document
 
 
@@ -260,6 +283,27 @@ def _decode_lod_runtime(document, version):
             object_id, ObjectAttentionState(attention), ObjectLodState(cap),
         ))
     return LodRuntimeState(tuple(entries))
+
+
+def _decode_player_position(document, version, location):
+    if version < 3:
+        if "player_position" in document:
+            raise ValueError("legacy save cannot contain player_position")
+        return None
+    if "player_position" not in document:
+        raise ValueError("player_position is required for save format version 3")
+    raw = document["player_position"]
+    if raw is None:
+        return None
+    if type(raw) is not dict or set(raw) != {"x", "y"}:
+        raise ValueError("player_position must contain exactly x and y")
+    position = PlayerPosition(raw["x"], raw["y"])
+    definition = spatial_definition_for_scene(location)
+    if definition is None:
+        raise ValueError("player_position requires a spatial definition")
+    if not can_player_occupy(definition.spec, position):
+        raise ValueError("player_position is not occupiable")
+    return position
 
 
 def _validated_save_state(document, scenario):
@@ -297,6 +341,9 @@ def _validated_save_state(document, scenario):
             raise ValueError("saved location does not exist")
     elif document["location"] is not None:
         raise ValueError("mapless scenario cannot restore a location")
+    player_position = _decode_player_position(
+        document, version, document["location"],
+    )
 
     if version == 0:
         if "focused_object_id" in document:
@@ -313,6 +360,7 @@ def _validated_save_state(document, scenario):
 
     candidate = GameState(document["seed"], scenario=scenario)
     candidate.restore(dict(document))
+    candidate.player_position = player_position
     candidate.lod_runtime = lod_runtime
     if focused is not None:
         if not scenario.has_map:
@@ -1272,6 +1320,7 @@ class ConsoleController:
             self._message(f"[ロード失敗] {exc}")
             return False
         self.state.restore(candidate.snapshot())
+        self.state.player_position = candidate.player_position
         self.state.lod_runtime = candidate.lod_runtime
         if focused is None:
             self.state.clear_focused_object()
