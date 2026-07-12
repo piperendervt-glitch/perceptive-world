@@ -1,42 +1,45 @@
 # Perceptive World
 
-Perceptive Worldは、同じ初期状態・seed・canonical action列から同じ結果を再現する、決定論的なgamebook／TRPG engineです。現在の`main`はPhase C完了点（`322ff1d`）であり、遊べる検証用sessionと、その挙動を固定するpresentation、record/replay、save/loadの境界を備えています。
+Perceptive Worldは、同じ初期状態・seed・canonical action列から同じ結果を再現する、決定論的なgamebook／TRPG engineです。
 
-完成済みゲームや2D／3D clientではありません。LLMも現在のcanonical stateや判定を操作せず、将来追加し得る非canonical narration層としてのみ想定しています。
+現在はPhase CとPhase D-0〜D-6までを実装済みです。Phase Dのautomated acceptanceとWindows PowerShell実TTY上のmanual fixed-screen TUI acceptanceはともにPASSしており、Phase D acceptanceは完了しています。
 
-## 現在の実装状況
+完成済みゲームや2D／3D clientではありません。LLMもcanonical stateや判定を操作せず、将来追加し得る非canonical narration層としてのみ想定しています。
 
-- Console UIと60列×20行を最低表示契約とするfixed-screen terminal UI
+## 現在の実装範囲
+
+- Console UIと60列×20行を最低表示契約とするfixed-screen TUI
 - engine stateから生成するimmutableな`RenderSnapshot`
-- raw入力を副作用なしで分類・解決するinput resolver
+- raw入力をcanonical actionへ解決するinput resolver
 - village、decision、combatを通る決定論的session flow
-- 解決済みeventを逐次処理するcanonical village event flow
-- stableなWorldObject IDと注目対象（focus）
-- versioned record/replayとsave/load
-- 複数scenarioをYAMLから読み込む共通engine
+- stableな`WorldObjectId`、visibility、focus
+- attentionとunlocked capから導出するLOD
+- canonical Observe／Inspect／LOD unlock action
+- engine-owned LOD runtime
+- versioned save/loadとrecord/replay
+- legacy save／fixtureとの後方互換性
 
-Phase C受入れ時のcommit `322ff1d`では、full suiteの322 tests、legacy envoy replay、version 1 focus replayがすべて成功しています。この件数は当該commitの受入れ記録であり、将来も固定される仕様ではありません。
+詳細なPhase D契約は[docs/phase-d.md](docs/phase-d.md)を参照してください。
 
 ## 主な設計原則
 
 - 判定、状態遷移、乱数消費はengineが所有する。
-- UIはraw入力をcanonical eventへ解決し、engineは解決済みeventを再検証する。
-- live playとreplayは同じsession flowとvalidation経路を使う。
-- engine stateとpresentation modelを分離し、TUIはsnapshotを描画するだけでstateを変更しない。
-- record、save、`GameState.snapshot()`は目的の異なるschemaとして分離する。
-- TUIは安定したdebug／reference clientとして維持し、将来のclientも同じengineを利用できる構造にする。
+- live playとreplayは同じcanonical dispatcherを使用する。
+- replay専用の直接state mutationを作らない。
+- presentationとTUIはauthoritative stateを変更しない。
+- hidden／future factsをpresentationへ渡さない。
+- current LODは保存せず、attentionとunlocked capから導出する。
+- focus設定だけではattentionを増やさない。
+- invalid actionとinvalid loadはatomicに拒否する。
+- record、save、`GameState.snapshot()`は別schemaとして扱う。
 
-## 実行環境とセットアップ
+## セットアップ
 
-scenario loaderはPyYAMLを使用します。
+Scenario loaderはPyYAMLを使用します。
 
 ```text
 pip install pyyaml
 ```
-
-repository rootで以下のcommandを実行してください。
-
-## セッションの起動
 
 通常のConsole UI:
 
@@ -44,13 +47,13 @@ repository rootで以下のcommandを実行してください。
 python -B -m trpg_core.session --scenario goblin --seed 7
 ```
 
-Fixed-screen terminal UI:
+Fixed-screen TUI:
 
 ```text
 python -B -m trpg_core.session --scenario goblin --seed 7 --ui tui
 ```
 
-利用可能なoptionは実行環境で確認できます。
+利用可能なoption:
 
 ```text
 python -B -m trpg_core.session --help
@@ -58,148 +61,175 @@ python -B -m trpg_core.session --help
 
 ## 操作
 
-Sessionでは表示された選択肢、village移動、探索、戦闘commandを使用します。戦闘commandは`attack`、`magic`、`herb`、`flee`です。
+戦闘command:
 
-現在sceneの対象には次のfocus commandを使用できます。
+```text
+attack
+magic
+herb
+flee
+```
+
+FocusとLOD command:
 
 ```text
 focus next
 focus prev
 focus clear
+observe
+inspect
 ```
 
-`WorldObjectId`はscenario IDとlocal IDからなる表示非依存のstable IDです。`WorldObjectSpec`が対象のkind、label、sceneとの関係を定義し、`FocusState`はplayer locationと独立して現在の注目対象だけを保持します。現在はmap locationをWorldObjectとして公開し、current sceneに属する対象をfocus候補にします。
+`observe`は現在focusしている対象のattentionを1増やし、`inspect`は2増やします。どちらもturn、RNG、HP／MP、`state.log`、focusを変更しません。Human-facingなLOD unlock commandはありません。
 
-Focusのset／clearはturnを進めず、RNGも`state.log`も変更しません。location移動時にはfocusをclearします。UIはraw IDではなく対象labelを表示し、focusがなければ`注目: なし`と表示します。
+## 決定論的LOD
 
-Client入力の方角や`focus next`／`focus prev`はclient側で解決されます。Engineへ渡るcanonical village eventは、概念上次の5種類です。
+対象ごとのauthoritative runtimeは、次の最小stateだけを保持します。
 
-- 解決済みWorldObject IDへの移動
-- canonical explore keyによる探索
-- villageからの出発
-- 解決済みWorldObject IDへのfocus設定
-- focus解除
+- `attention_level`
+- `unlocked_lod_cap`
 
-実装上は`MoveToLocationAction`、`ExploreAction`、`DepartAction`、`SetFocusAction`、`ClearFocusAction`に対応します。Raw direction、表示label、menu index、GameStateやGameMapそのものはcanonical eventに保存しません。
-
-## Record / Replay
-
-Record formatのcurrent versionは`1`です。`format_version`がないfixtureはlegacy version `0`として読みます。Version 1のchoiceは表示labelではなくcanonical keyです。Version 0は既存fixtureとの互換性のためlegacy label解決を維持します。
-
-録画command:
+`current_lod`はthresholdとcapから毎回導出します。
 
 ```text
-python -B -m trpg_core.record --scenario goblin --seed 7 --play --out session.json
-python -B -m trpg_core.record --scenario goblin --seed 7 --inputs inputs.txt --out session.json
+current_lod = min(lod_from_attention, unlocked_lod_cap, max_lod)
 ```
 
-Replay command:
+Wall-clock、FPS、非seed RNGには依存しません。Render回数だけでattentionやLODが変わることもありません。
+
+## 古井戸vertical slice
+
+Object ID:
 
 ```text
-python -B -m trpg_core.replay session.json
-python -B -m trpg_core.replay --mode state session.json
+goblin:location/well
 ```
 
-Canonical tokenの例:
+Attention thresholds:
 
 ```text
-move-to:envoy:location/teahouse
-focus:set:envoy:location/teahouse
-focus:clear
-explore:rapport
-depart
-choice:hear
-combat:attack
+(0, 1, 3, 6)
 ```
 
-Raw direction、`focus next`／`focus prev`、表示label、menu indexはversion 1のcanonical recordへ入りません。Replay終了時には未消費tokenがないことも検査します。
+表示されるfacts:
 
-Version 1 fixtureは任意の`expected_focus_trace`で、focus set／clear後のauthoritative state由来traceを検証できます。これはreplay expectationであり、`GameState`、snapshot、saveのfieldではありません。`focus_play_v1.json`は13 input tokenをすべて消費し、10件の`state.log` entryを再現します。CLIの`events`表示はinput token数ではなく`state.log` entry数です。
+- LOD 0: 井戸らしい形
+- LOD 1: 石造り、古い
+- LOD 2: 新しい滑車、擦れた縄
+- LOD 3: 消えかけた紋章
+
+表示は累積です。`消えかけた紋章`はLOD 3より前には公開されません。
+
+最短確認手順:
+
+1. 古井戸へ移動する。
+2. `focus next`
+3. `observe`
+4. `inspect`
+5. `observe`
+6. `inspect`
+
+LODは`0 → 1 → 2 → 2 → 3`と進みます。
+
+## Visibilityとpresentation境界
+
+Current scene queryは、sceneに存在するWorldObjectだけを返します。Focus候補は次の条件をすべて満たす対象です。
+
+```text
+exists_in_scene and perceived and focus_candidate
+```
+
+TUIは`RenderSnapshot`だけを参照します。通常表示へraw `WorldObjectId`、fact key、fact value、hidden／future factsを渡しません。
 
 ## Save / Load
 
-Save formatのcurrent versionも`1`ですが、record format versionとは独立したschemaです。
+Current save formatはversion 2です。
 
-- Version fieldなし、または明示的な`0`はlegacy saveとして扱う。
-- Version 1は`focused_object_id`をcanonical stringで保存する。
-- Focusがない場合は`focused_object_id: null`とする。
-- Legacy version 0のload後はfocusなしになる。
-- Scenario不一致、malformed ID、scene外またはstaleなfocusを拒否する。
+LOD runtimeで保存するもの:
 
-Loadは一時stateとmapでvalidationを完了してからlive stateへ反映します。不正なloadでstate、focus、RNG、mapを部分的に変更しません。Focus fieldはsave documentのmetadataであり、既存の`GameState.snapshot()` schemaには追加されていません。
+- canonical object ID
+- `attention_level`
+- `unlocked_lod_cap`
 
-対話sessionでは次のmeta commandを使用します。
+保存しないもの:
+
+- `current_lod`
+- visible／hidden facts
+- presentation labels
+- thresholdsやcontent spec
+
+Save version 0／1はempty LOD runtimeへmigrationします。Loadは一時stateでvalidationを完了してからlive stateへ反映し、不正なdocumentでstate、focus、RNG、map、LOD runtimeを部分変更しません。
+
+対話sessionのmeta command:
 
 ```text
 save <name>
 load <name>
 ```
 
-## テスト
+## Record / Replay
+
+Current record formatはversion 2です。Version 0／1の既存tokenも引き続き再生できます。
+
+LOD canonical token:
+
+```text
+observe
+inspect
+lod-unlock:<object-id>:<target-cap>
+```
+
+`expected_lod_trace`はaccepted canonical village event後のLOD runtimeを記録し、object ID、attention、cap、derived LODを比較します。Hidden factsやpresentation labelは記録しません。
+
+録画:
+
+```text
+python -B -m trpg_core.record --scenario goblin --seed 7 --play --out session.json
+```
+
+Replay:
+
+```text
+python -B -m trpg_core.replay session.json
+python -B -m trpg_core.replay --mode state session.json
+```
+
+Repository同梱fixture:
+
+```text
+python -B -m trpg_core.replay tests/fixtures/focus_play_v1.json
+python -B -m trpg_core.replay tests/fixtures/lod_play_v2.json
+```
+
+## 検証
 
 Full suite:
 
 ```text
-python -B -m pytest -p no:cacheprovider
+python -B -m pytest -q -p no:cacheprovider
 ```
 
-主要な個別回帰の例:
+Phase Dの代表的な受入れ確認:
 
 ```text
-python -B -m pytest -p no:cacheprovider tests/test_world.py
-python -B -m pytest -p no:cacheprovider tests/test_focus_engine.py
-python -B -m pytest -p no:cacheprovider tests/test_record_replay.py
-python -B -m pytest -p no:cacheprovider tests/test_save_load.py
-```
-
-Repositoryに同梱されたversion 1 acceptance fixtureは次のcommandで確認できます。
-
-```text
+python -B -m trpg_core.session --help
 python -B -m trpg_core.replay tests/fixtures/focus_play_v1.json
+python -B -m trpg_core.replay tests/fixtures/lod_play_v2.json
 ```
 
-## アーキテクチャ概要
+Passed件数は実装とともに増えるため、恒久仕様としてREADMEには固定しません。
 
-```text
-raw input
-  -> pure input resolver
-  -> canonical controller event
-  -> shared engine validation / transition
-  -> GameState
-  -> RenderSnapshot
-  -> Console / fixed-screen TUI
+## 現在の制限と次工程
 
-canonical event stream
-  -> record codec
-  -> versioned fixture
-  -> replay through the same engine path
-```
+未実装:
 
-主なmodule:
-
-- `trpg_core/session.py`: session flow、state transition、save/load
-- `trpg_core/input_actions.py`: raw入力とcanonical village eventの境界
-- `trpg_core/world.py`: WorldObjectとFocusState
-- `trpg_core/presentation.py`: neutral presentation snapshot
-- `trpg_core/tui.py`: fixed-screen terminal renderer
-- `trpg_core/record.py`、`record_codec.py`、`replay.py`: versioned record/replay
-
-## 現在の制限
-
-次の機能は現在の`main`には未実装です。
-
-- visibility／hidden fact runtime
-- attention／LOD
-- Observe／Inspect action
-- trace／memory
-- background job queue
 - PlayerPosition
-- 2D／3D rendererやclient
-- LLM narration
-- natural-language action proposal
+- movementとfocusの2D接続
+- trace LOD／memory system
+- minimal 2D client
+- 3D renderer
+- LLM narration／input mapping
 
-Windows端末では、CLIの日本語help表示が端末の文字コード設定に影響される場合があります。
+次工程はPhase E-0の`PlayerPosition`とmovement-focus境界です。Phase D acceptanceは完了しているため、Phase E-0へ進行可能です。
 
-## 今後の計画
-
-次に予定している境界は、visibility／hidden-factのdomain contractです。現在の`main`で利用可能な機能としては扱っていません。Provider framework、runtime discovery、LODや観察actionは、その境界より後の検討事項です。
+Windows端末では、日本語表示が端末の文字コード設定に影響される場合があります。
