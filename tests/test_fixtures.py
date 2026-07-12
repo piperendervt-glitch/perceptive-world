@@ -84,6 +84,16 @@ def test_record_replay_roundtrip():
             f"{name}: 録画→再生のラウンドトリップが不一致"
 
 
+def test_protected_envoy_fixture_remains_legacy_v0():
+    path = os.path.join(FIXTURE_DIR, "envoy_play.json")
+    fx = load_fixture(path)
+    assert "format_version" not in fx
+    assert len(fx["inputs"]) == 4
+    assert len(fx["expected_log"]) == 10
+    ok, actual, diff = replay_fixture(fx, mode="full")
+    assert ok and actual == fx["expected_log"], diff
+
+
 # ---------------------------------------------------------------------------
 # 4) ゲーム状態イベントと描写イベントの区別（Step 3 で描写を比較除外する準備）
 # ---------------------------------------------------------------------------

@@ -31,6 +31,12 @@ import json
 import os
 from collections import deque
 
+from .record_codec import (
+    parse_record_token,
+    record_format_version,
+    serialize_record_token,
+)
+
 # --- イベント分類（型で判定。ログ本体は書き換えない）-----------------------
 # 描写イベント: Step 3 で GM(LLM) が生成する自由記述の型。今は未使用（描写は presenter 側）。
 NARRATION_EVENT_TYPES = frozenset({"narration", "describe"})
@@ -72,37 +78,54 @@ class FixtureController:
     書いても replay できる）。map 移動は UI なので入力列には現れない（探索は選んだ key 列）。
     """
 
-    def __init__(self, inputs, scenario):
+    def __init__(self, inputs, scenario, *, format_version=0):
         self.q = deque(inputs)
         self.sc = scenario
+        self.format_version = format_version
+        self.canonical_inputs: list[str] = []
 
     def explores(self):
         keys = []
-        while self.q and str(self.q[0]).startswith("explore:"):
-            keys.append(self.q.popleft().split(":", 1)[1])
+        while self.q:
+            parsed = parse_record_token(self.q[0], format_version=self.format_version)
+            if parsed.verb != "explore":
+                break
+            self.q.popleft()
+            keys.append(parsed.payload)
+            self.canonical_inputs.append(serialize_record_token("explore", parsed.payload))
         return keys
 
     def choice(self, node, options):
         item = self._pop("choice")
-        return self._resolve_choice(node, item)
+        key = self._resolve_choice(node, item)
+        self.canonical_inputs.append(serialize_record_token("choice", key))
+        return key
 
     def combat_command(self, state, enemies):
-        return self._pop("combat")
+        command = self._pop("combat")
+        self.canonical_inputs.append(serialize_record_token("combat", command))
+        return command
 
     # --- 内部 ---
     def _pop(self, kind):
         if not self.q:
             raise ValueError(f"入力列が尽きた（{kind} を要求）")
-        item = str(self.q.popleft())
-        if not item.startswith(kind + ":"):
+        item = self.q.popleft()
+        parsed = parse_record_token(item, format_version=self.format_version)
+        if parsed.verb != kind:
             raise ValueError(f"入力の型が不一致: {kind} を要求したが '{item}'")
-        return item.split(":", 1)[1]
+        return parsed.payload
 
     def _resolve_choice(self, node, val):
         choices = self.sc.node(node).choices
         for c in choices:                      # 1) key 完全一致
             if c.key == val:
                 return c.key
+        if self.format_version == 1:
+            raise ValueError(
+                f"choice key '{val}' を node '{node}' で解決できない（候補: "
+                f"{[c.key for c in choices]}）"
+            )
         for c in choices:                      # 2) ラベル完全一致
             if c.label == val:
                 return c.key
@@ -114,16 +137,26 @@ class FixtureController:
             f"{[(c.key, c.label) for c in choices]}）"
         )
 
+    def remaining_events(self):
+        return tuple(self.q)
+
+    def assert_all_events_consumed(self):
+        if self.q:
+            raise ValueError(
+                f"未消費の replay event: remaining={len(self.q)}, first={self.q[0]!r}"
+            )
+
 
 # --- 再生と比較 --------------------------------------------------------------
 
-def _run(scenario_id: str, seed: int, inputs, respawn=False):
+def _run(scenario_id: str, seed: int, inputs, respawn=False, *, format_version=0):
     from .session import GameState, run_session
     from .scenario_loader import load_scenario
     state = GameState(seed, scenario=load_scenario(scenario_id))
     state.respawn_on_defeat = respawn
-    controller = FixtureController(inputs, state.scenario)
+    controller = FixtureController(inputs, state.scenario, format_version=format_version)
     run_session(state, controller)
+    controller.assert_all_events_consumed()
     return state
 
 
@@ -147,8 +180,10 @@ def replay_fixture(fixture: dict, mode: str = "full"):
     mode="state" : 描写イベントを除いて比較（Step 3 で描写だけ変わる場合の検証）。
     戻り値: (ok: bool, actual_log: list, diff: tuple|None)
     """
+    version = record_format_version(fixture)
     state = _run(fixture["scenario"], fixture["seed"], fixture["inputs"],
-                 respawn=bool(fixture.get("respawn", False)))
+                 respawn=bool(fixture.get("respawn", False)),
+                 format_version=version)
     actual = state.log
     expected = fixture["expected_log"]
     if mode == "state":

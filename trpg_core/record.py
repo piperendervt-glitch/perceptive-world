@@ -24,6 +24,10 @@ import os
 import sys
 
 from .replay import FixtureController
+from .record_codec import (
+    CURRENT_RECORD_FORMAT_VERSION,
+    serialize_record_token,
+)
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -36,7 +40,7 @@ class RecordingController:
     """任意の base コントローラをラップし、供給された入力を型付きで記録する。
 
     run_session が pull した入力（探索 key / 選択 / 戦闘コマンド）をそのまま録る。
-    choice は人が読める **ラベル** で記録する（replay 側は key/ラベル/部分一致で解決）。
+    choice は表示ラベルではなく canonical key で記録する。
     """
 
     def __init__(self, base, scenario):
@@ -46,24 +50,18 @@ class RecordingController:
 
     def explores(self):
         keys = list(self.base.explores())
-        self.inputs.extend(f"explore:{k}" for k in keys)
+        self.inputs.extend(serialize_record_token("explore", k) for k in keys)
         return keys
 
     def choice(self, node, options):
         key = self.base.choice(node, options)
-        self.inputs.append(f"choice:{self._label(node, key)}")
+        self.inputs.append(serialize_record_token("choice", key))
         return key
 
     def combat_command(self, state, enemies):
         cmd = self.base.combat_command(state, enemies)
-        self.inputs.append(f"combat:{cmd}")
+        self.inputs.append(serialize_record_token("combat", cmd))
         return cmd
-
-    def _label(self, node, key):
-        for c in self.scenario.node(node).choices:
-            if c.key == key:
-                return c.label
-        return key
 
 
 def _new_state(scenario_id: str, seed: int, respawn: bool):
@@ -80,7 +78,8 @@ def build_fixture(scenario_id: str, seed: int, base_controller, respawn=False) -
     state = _new_state(scenario_id, seed, respawn)
     rec = RecordingController(base_controller, state.scenario)
     run_session(state, rec)
-    fixture = {"scenario": scenario_id, "seed": seed, "inputs": rec.inputs,
+    fixture = {"format_version": CURRENT_RECORD_FORMAT_VERSION,
+               "scenario": scenario_id, "seed": seed, "inputs": rec.inputs,
                "expected_log": state.log}
     if respawn:
         fixture["respawn"] = True
@@ -91,8 +90,12 @@ def fixture_from_inputs(scenario_id: str, seed: int, inputs, respawn=False) -> d
     """既にある型付き入力列からフィクスチャを生成（expected_log を再生成）。"""
     from .session import run_session
     state = _new_state(scenario_id, seed, respawn)
-    run_session(state, FixtureController(inputs, state.scenario))
-    fixture = {"scenario": scenario_id, "seed": seed, "inputs": list(inputs),
+    controller = FixtureController(inputs, state.scenario, format_version=0)
+    run_session(state, controller)
+    controller.assert_all_events_consumed()
+    fixture = {"format_version": CURRENT_RECORD_FORMAT_VERSION,
+               "scenario": scenario_id, "seed": seed,
+               "inputs": controller.canonical_inputs,
                "expected_log": state.log}
     if respawn:
         fixture["respawn"] = True
@@ -124,7 +127,8 @@ def _record_interactive(scenario_id: str, seed: int, ui_mode: str = "menu") -> d
     print()
     print(scenario.ending_text(result))
     print(f"\n>>> 結果: {result}")
-    fixture = {"scenario": scenario_id, "seed": seed, "inputs": rec.inputs,
+    fixture = {"format_version": CURRENT_RECORD_FORMAT_VERSION,
+               "scenario": scenario_id, "seed": seed, "inputs": rec.inputs,
                "expected_log": state.log}
     if state.respawn_on_defeat:
         # respawn が実際に起きたかは inputs/ログから判断できるが、既定 True で保存しても
