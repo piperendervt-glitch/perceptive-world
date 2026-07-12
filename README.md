@@ -1,71 +1,205 @@
-# sdnd-ordia
+# Perceptive World
 
-Spec-Driven Novel Development v2（**SDND v2**）を用いた、異世界転生ファンタジー『Ordia』のリポジトリ。
+Perceptive Worldは、同じ初期状態・seed・canonical action列から同じ結果を再現する、決定論的なgamebook／TRPG engineです。現在の`main`はPhase C完了点（`322ff1d`）であり、遊べる検証用sessionと、その挙動を固定するpresentation、record/replay、save/loadの境界を備えています。
 
-## SDND v2 とは
+完成済みゲームや2D／3D clientではありません。LLMも現在のcanonical stateや判定を操作せず、将来追加し得る非canonical narration層としてのみ想定しています。
 
-小説執筆を、仕様と検査によって駆動する枠組み。二つの独立した「軸」を持つ:
+## 現在の実装状況
 
-- **整合性軸（Consistency）**: 世界の不変ルール（specs/core/invariants.md）に照らして違反を検査する。
-- **ドラマ軸（Drama）**: 面白さの規律（specs/core/drama_invariants.md）に照らしてターン・緊張・問い・代償を検査する。
+- Console UIと60列×20行を最低表示契約とするfixed-screen terminal UI
+- engine stateから生成するimmutableな`RenderSnapshot`
+- raw入力を副作用なしで分類・解決するinput resolver
+- village、decision、combatを通る決定論的session flow
+- 解決済みeventを逐次処理するcanonical village event flow
+- stableなWorldObject IDと注目対象（focus）
+- versioned record/replayとsave/load
+- 複数scenarioをYAMLから読み込む共通engine
 
-**両方の QA を通ってはじめて canon（正史）に登録される**。整合性だけでは退屈、ドラマだけでは破綻する — その両立を仕組みで保証する。
+Phase C受入れ時のcommit `322ff1d`では、full suiteの322 tests、legacy envoy replay、version 1 focus replayがすべて成功しています。この件数は当該commitの受入れ記録であり、将来も固定される仕様ではありません。
 
-## Ordia の世界
+## 主な設計原則
 
-- ジャンル: 異世界転生ファンタジー。魔法は一般的に使え、血統が強さを決める。
-- **理（ことわり）**: 世界の根本法則。何者もこれから外れることはできない。
-- **ステータス**: 転生者にしか見えない数値。これは便利機能ではなく「知ってしまう格差＝呪い」として扱う。
-- 中心の問い: 「理とは何か。なぜ何者もそこから外れられないのか。」
-- 中核テーマ: **秘密に近づく＝何かを失う**。真理を得ることが、この世界に居る資格や大切なものを失うことを意味する。
+- 判定、状態遷移、乱数消費はengineが所有する。
+- UIはraw入力をcanonical eventへ解決し、engineは解決済みeventを再検証する。
+- live playとreplayは同じsession flowとvalidation経路を使う。
+- engine stateとpresentation modelを分離し、TUIはsnapshotを描画するだけでstateを変更しない。
+- record、save、`GameState.snapshot()`は目的の異なるschemaとして分離する。
+- TUIは安定したdebug／reference clientとして維持し、将来のclientも同じengineを利用できる構造にする。
 
-詳細は specs/core/ を参照。
+## 実行環境とセットアップ
 
-## ディレクトリ構成
+scenario loaderはPyYAMLを使用します。
 
-```
-sdnd-ordia/
-  CLAUDE.md            # ガードレール（AI エージェント向け）
-  README.md            # 本書
-  specs/
-    core/              # 変えない前提（TIER1 常時参照）
-    reference/         # 詳細ロア（TIER3 随時）
-  canon/
-    quick_ref.md       # 最新要約（TIER1）
-    active/            # 直近5話（TIER2）
-    archive/           # 古い話
-  meta/
-    engine_state.md    # ドラマ状態（緊張・ターン・約束）
-    open_loops.md      # 拡張台帳（回収＋好奇心）
-  qa/
-    consistency_checklist.md
-    drama_checklist.md
-    reports/           # 各話の検査結果
-  .claude/agents/
-    writer.md director.md editor.md qa.md
-  story/               # 本編（M1 では空）
+```text
+pip install pyyaml
 ```
 
-## エージェントと権限
+repository rootで以下のcommandを実行してください。
 
-| エージェント | 役割 | 書込許可 |
-|--------------|------|---------|
-| director | 次話の劇的狙いを指示 | meta/engine_state.md のみ |
-| writer | 本編を執筆 | story/ のみ |
-| qa | 整合性＋ドラマの検査 | qa/reports/ のみ |
-| editor | canon 登録・状態更新 | specs/, canon/, meta/ |
+## セッションの起動
 
-いずれも許可領域外を書き換えない。
+通常のConsole UI:
 
-## ワークフロー
-
-```
-director（mode_hint）→ writer（執筆）→ qa（整合性＋ドラマ、両方）
-  → 両方 PASS → editor（canon 登録 & meta 更新）→ git commit
+```text
+python -B -m trpg_core.session --scenario goblin --seed 7
 ```
 
-## 現状マイルストーン
+Fixed-screen terminal UI:
 
-**M1: リポジトリ骨格とコア仕様の作成。本編は書かない。**
+```text
+python -B -m trpg_core.session --scenario goblin --seed 7 --ui tui
+```
 
-M2 以降で第1話の執筆に入る。詳細は CLAUDE.md を参照。
+利用可能なoptionは実行環境で確認できます。
+
+```text
+python -B -m trpg_core.session --help
+```
+
+## 操作
+
+Sessionでは表示された選択肢、village移動、探索、戦闘commandを使用します。戦闘commandは`attack`、`magic`、`herb`、`flee`です。
+
+現在sceneの対象には次のfocus commandを使用できます。
+
+```text
+focus next
+focus prev
+focus clear
+```
+
+`WorldObjectId`はscenario IDとlocal IDからなる表示非依存のstable IDです。`WorldObjectSpec`が対象のkind、label、sceneとの関係を定義し、`FocusState`はplayer locationと独立して現在の注目対象だけを保持します。現在はmap locationをWorldObjectとして公開し、current sceneに属する対象をfocus候補にします。
+
+Focusのset／clearはturnを進めず、RNGも`state.log`も変更しません。location移動時にはfocusをclearします。UIはraw IDではなく対象labelを表示し、focusがなければ`注目: なし`と表示します。
+
+Client入力の方角や`focus next`／`focus prev`はclient側で解決されます。Engineへ渡るcanonical village eventは、概念上次の5種類です。
+
+- 解決済みWorldObject IDへの移動
+- canonical explore keyによる探索
+- villageからの出発
+- 解決済みWorldObject IDへのfocus設定
+- focus解除
+
+実装上は`MoveToLocationAction`、`ExploreAction`、`DepartAction`、`SetFocusAction`、`ClearFocusAction`に対応します。Raw direction、表示label、menu index、GameStateやGameMapそのものはcanonical eventに保存しません。
+
+## Record / Replay
+
+Record formatのcurrent versionは`1`です。`format_version`がないfixtureはlegacy version `0`として読みます。Version 1のchoiceは表示labelではなくcanonical keyです。Version 0は既存fixtureとの互換性のためlegacy label解決を維持します。
+
+録画command:
+
+```text
+python -B -m trpg_core.record --scenario goblin --seed 7 --play --out session.json
+python -B -m trpg_core.record --scenario goblin --seed 7 --inputs inputs.txt --out session.json
+```
+
+Replay command:
+
+```text
+python -B -m trpg_core.replay session.json
+python -B -m trpg_core.replay --mode state session.json
+```
+
+Canonical tokenの例:
+
+```text
+move-to:envoy:location/teahouse
+focus:set:envoy:location/teahouse
+focus:clear
+explore:rapport
+depart
+choice:hear
+combat:attack
+```
+
+Raw direction、`focus next`／`focus prev`、表示label、menu indexはversion 1のcanonical recordへ入りません。Replay終了時には未消費tokenがないことも検査します。
+
+Version 1 fixtureは任意の`expected_focus_trace`で、focus set／clear後のauthoritative state由来traceを検証できます。これはreplay expectationであり、`GameState`、snapshot、saveのfieldではありません。`focus_play_v1.json`は13 input tokenをすべて消費し、10件の`state.log` entryを再現します。CLIの`events`表示はinput token数ではなく`state.log` entry数です。
+
+## Save / Load
+
+Save formatのcurrent versionも`1`ですが、record format versionとは独立したschemaです。
+
+- Version fieldなし、または明示的な`0`はlegacy saveとして扱う。
+- Version 1は`focused_object_id`をcanonical stringで保存する。
+- Focusがない場合は`focused_object_id: null`とする。
+- Legacy version 0のload後はfocusなしになる。
+- Scenario不一致、malformed ID、scene外またはstaleなfocusを拒否する。
+
+Loadは一時stateとmapでvalidationを完了してからlive stateへ反映します。不正なloadでstate、focus、RNG、mapを部分的に変更しません。Focus fieldはsave documentのmetadataであり、既存の`GameState.snapshot()` schemaには追加されていません。
+
+対話sessionでは次のmeta commandを使用します。
+
+```text
+save <name>
+load <name>
+```
+
+## テスト
+
+Full suite:
+
+```text
+python -B -m pytest -p no:cacheprovider
+```
+
+主要な個別回帰の例:
+
+```text
+python -B -m pytest -p no:cacheprovider tests/test_world.py
+python -B -m pytest -p no:cacheprovider tests/test_focus_engine.py
+python -B -m pytest -p no:cacheprovider tests/test_record_replay.py
+python -B -m pytest -p no:cacheprovider tests/test_save_load.py
+```
+
+Repositoryに同梱されたversion 1 acceptance fixtureは次のcommandで確認できます。
+
+```text
+python -B -m trpg_core.replay tests/fixtures/focus_play_v1.json
+```
+
+## アーキテクチャ概要
+
+```text
+raw input
+  -> pure input resolver
+  -> canonical controller event
+  -> shared engine validation / transition
+  -> GameState
+  -> RenderSnapshot
+  -> Console / fixed-screen TUI
+
+canonical event stream
+  -> record codec
+  -> versioned fixture
+  -> replay through the same engine path
+```
+
+主なmodule:
+
+- `trpg_core/session.py`: session flow、state transition、save/load
+- `trpg_core/input_actions.py`: raw入力とcanonical village eventの境界
+- `trpg_core/world.py`: WorldObjectとFocusState
+- `trpg_core/presentation.py`: neutral presentation snapshot
+- `trpg_core/tui.py`: fixed-screen terminal renderer
+- `trpg_core/record.py`、`record_codec.py`、`replay.py`: versioned record/replay
+
+## 現在の制限
+
+次の機能は現在の`main`には未実装です。
+
+- visibility／hidden fact runtime
+- attention／LOD
+- Observe／Inspect action
+- trace／memory
+- background job queue
+- PlayerPosition
+- 2D／3D rendererやclient
+- LLM narration
+- natural-language action proposal
+
+Windows端末では、CLIの日本語help表示が端末の文字コード設定に影響される場合があります。
+
+## 今後の計画
+
+次に予定している境界は、visibility／hidden-factのdomain contractです。現在の`main`で利用可能な機能としては扱っていません。Provider framework、runtime discovery、LODや観察actionは、その境界より後の検討事項です。
