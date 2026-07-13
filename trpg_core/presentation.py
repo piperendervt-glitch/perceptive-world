@@ -19,6 +19,7 @@ from .lod_actions import (
 )
 from .lod_content import lod_content_for_world_object, visible_facts_for_lod
 from .rules import effect_damage_bonus, effect_hit_bonus, has_recon, modifier
+from .trace_memory import MemoryState, ObjectTraceMap, serialize_memory_tag_id
 from .world import (
     WorldFact,
     WorldObjectId,
@@ -68,6 +69,22 @@ class FocusedObjectLodView:
             if fact.key in keys:
                 raise ValueError(f"duplicate visible fact key: {fact.key}")
             keys.add(fact.key)
+
+
+@dataclass(frozen=True)
+class RememberedFactView:
+    label: str
+
+    def __post_init__(self) -> None:
+        _exact_text(self.label, "label")
+
+
+@dataclass(frozen=True)
+class MemoryTagView:
+    label: str
+
+    def __post_init__(self) -> None:
+        _exact_text(self.label, "label")
 
 
 _OBJECT_PRESENTATION_LABELS = {
@@ -171,6 +188,47 @@ def focused_object_lod_view(
         tuple(visible_world_fact_view(focused_object_id, fact) for fact in visible.facts),
         current_lod < min(content.lod_spec.max_lod, progress.lod_state.unlocked_lod_cap),
     )
+
+
+def focused_object_memory_views(
+    *,
+    focused_object_id: WorldObjectId | None,
+    object_traces: ObjectTraceMap,
+    memory_state: MemoryState,
+    currently_visible_fact_keys: Iterable[str] = (),
+) -> tuple[tuple[RememberedFactView, ...], tuple[MemoryTagView, ...]]:
+    """Project the focused well's safe remembered labels from YAML authority."""
+    if type(object_traces) is not ObjectTraceMap:
+        raise ValueError("object_traces must be an ObjectTraceMap")
+    if type(memory_state) is not MemoryState:
+        raise ValueError("memory_state must be a MemoryState")
+    well = WorldObjectId("goblin", "location/well")
+    if focused_object_id != well:
+        return (), ()
+    visible = frozenset(currently_visible_fact_keys)
+    if any(not isinstance(key, str) for key in visible):
+        raise ValueError("currently visible fact keys must be strings")
+    catalog = goblin_knowledge_catalog()
+    spec = catalog.object(well)
+    if spec is None:
+        raise ValueError("well knowledge is unavailable")
+    trace = object_traces.get(well)
+    remembered_keys = frozenset() if trace is None else frozenset(
+        key.value for key in trace.remembered_fact_keys
+    )
+    remembered = tuple(
+        RememberedFactView(knowledge_presentation_label(fact.label_key))
+        for fact in spec.facts
+        if fact.key in remembered_keys and fact.key not in visible
+    )
+    active_ids = frozenset(serialize_memory_tag_id(tag) for tag in memory_state.tags)
+    active = tuple(
+        MemoryTagView(knowledge_presentation_label(tag.label_key))
+        for tag in catalog.memory_tags
+        if str(tag.tag_id) in active_ids
+        and any(reference.object_id == well for reference in tag.required_facts)
+    )
+    return remembered, active
 
 
 @dataclass(frozen=True)
@@ -428,6 +486,10 @@ class RenderSnapshot:
     world_objects: tuple[WorldObjectView, ...] = field(default_factory=tuple)
     focused_object_id: str | None = None
     focused_object_lod: FocusedObjectLodView | None = None
+    focused_object_remembered_facts: tuple[RememberedFactView, ...] = field(
+        default_factory=tuple,
+    )
+    active_memory_tags: tuple[MemoryTagView, ...] = field(default_factory=tuple)
     spatial_scene: SceneSpatialView | None = None
 
     def __post_init__(self) -> None:
@@ -435,6 +497,16 @@ class RenderSnapshot:
         object.__setattr__(self, "enemies", tuple(self.enemies))
         object.__setattr__(self, "recent_messages", tuple(self.recent_messages))
         object.__setattr__(self, "world_objects", tuple(self.world_objects))
+        object.__setattr__(
+            self, "focused_object_remembered_facts",
+            tuple(self.focused_object_remembered_facts),
+        )
+        object.__setattr__(self, "active_memory_tags", tuple(self.active_memory_tags))
+        if any(not isinstance(item, RememberedFactView)
+               for item in self.focused_object_remembered_facts):
+            raise ValueError("remembered facts must contain RememberedFactView values")
+        if any(not isinstance(item, MemoryTagView) for item in self.active_memory_tags):
+            raise ValueError("memory tags must contain MemoryTagView values")
 
 
 def build_render_snapshot(
@@ -589,6 +661,18 @@ def build_render_snapshot(
         )
     elif focused_id is not None:
         raise ValueError("focused object requires an active map scene")
+    focused_lod = focused_object_lod_view(
+        focused_object_id=focused_id, lod_runtime=lod_runtime,
+    )
+    remembered_facts, active_memory_tags = focused_object_memory_views(
+        focused_object_id=focused_id,
+        object_traces=getattr(state, "object_traces", ObjectTraceMap()),
+        memory_state=getattr(state, "memory_state", MemoryState()),
+        currently_visible_fact_keys=(
+            () if focused_lod is None
+            else tuple(fact.key for fact in focused_lod.visible_facts)
+        ),
+    )
     return RenderSnapshot(
         scenario_id=str(state.scenario.id),
         scene_id=context.scene_id,
@@ -606,9 +690,9 @@ def build_render_snapshot(
         ending=context.ending,
         world_objects=world_objects,
         focused_object_id=focused_object_id,
-        focused_object_lod=focused_object_lod_view(
-            focused_object_id=focused_id, lod_runtime=lod_runtime,
-        ),
+        focused_object_lod=focused_lod,
+        focused_object_remembered_facts=remembered_facts,
+        active_memory_tags=active_memory_tags,
         spatial_scene=spatial_scene,
     )
 

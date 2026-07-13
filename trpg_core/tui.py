@@ -234,6 +234,23 @@ def screen_model_from_snapshot(snapshot: RenderSnapshot) -> ScreenModel:
         lod = snapshot.focused_object_lod
         labels = " / ".join(fact.label for fact in lod.visible_facts)
         lod_detail = f"観察 LOD {lod.current_lod}: {labels}"
+    memory_lines = []
+    if snapshot.focused_object_remembered_facts:
+        memory_lines.append(
+            "記憶: " + " / ".join(
+                fact.label for fact in snapshot.focused_object_remembered_facts
+            )
+        )
+    if snapshot.active_memory_tags:
+        memory_lines.append(
+            "確定した記憶: " + " / ".join(
+                tag.label for tag in snapshot.active_memory_tags
+            )
+        )
+    if memory_lines:
+        lod_detail = "\n".join(
+            part for part in (lod_detail, *memory_lines) if part is not None
+        )
 
     return ScreenModel(
         place=snapshot.scene_title or snapshot.scene_id or "",

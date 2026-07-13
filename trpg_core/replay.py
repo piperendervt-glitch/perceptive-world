@@ -101,6 +101,8 @@ class FixtureController:
             "legacy_all" if format_version <= 5
             else ("well_current" if format_version == 6 else "all_current")
         )
+        # F-3 runtime state is intentionally outside record formats through v7.
+        self.trace_memory_profile = "legacy" if format_version <= 7 else "current"
 
     def explores(self):
         keys = []

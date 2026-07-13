@@ -14,6 +14,7 @@ CLI:
 from __future__ import annotations
 
 import argparse
+import copy
 import io
 import json
 import os
@@ -60,6 +61,15 @@ from .world import (
 from .lod import ObjectAttentionState, ObjectLodState
 from .lod_actions import LodRuntimeState, ObjectLodProgress, apply_lod_action
 from .lod_content import lod_content_for_world_object
+from .trace_memory import (
+    MemoryState,
+    ObjectTraceMap,
+    ObjectTraceState,
+    derive_memory_tags,
+    remember_derived_memory,
+    remember_visible_facts,
+    update_object_trace_map,
+)
 from .spatial import PlayerPosition, SceneCell, can_player_occupy
 from .spatial_content import (
     current_spatial_definition_for_scene,
@@ -102,6 +112,26 @@ _DIR_LABEL = {"north": "北", "east": "東", "south": "南", "west": "西"}
 # ---------------------------------------------------------------------------
 
 class GameState:
+    @property
+    def object_traces(self) -> ObjectTraceMap:
+        return self._object_traces
+
+    @object_traces.setter
+    def object_traces(self, value: ObjectTraceMap) -> None:
+        if type(value) is not ObjectTraceMap:
+            raise ValueError("object_traces must be an ObjectTraceMap")
+        self._object_traces = value
+
+    @property
+    def memory_state(self) -> MemoryState:
+        return self._memory_state
+
+    @memory_state.setter
+    def memory_state(self, value: MemoryState) -> None:
+        if type(value) is not MemoryState:
+            raise ValueError("memory_state must be a MemoryState")
+        self._memory_state = value
+
     @property
     def completed_village_actions(self) -> frozenset[str]:
         return self._completed_village_actions
@@ -177,6 +207,9 @@ class GameState:
         self.log: list[dict] = []
         self.focus_state = FocusState()
         self.lod_runtime = LodRuntimeState()
+        # F-3 live runtime only。save v6 / record v7 にはまだ含めない。
+        self.object_traces = ObjectTraceMap()
+        self.memory_state = MemoryState()
         # 表示専用フック（対話プレイでのみ設定）。**ログには一切影響しない**——
         # scripted/policy では None のままなので回帰ログはバイト単位で不変（seed=7 保証）。
         self.presenter = None
@@ -737,11 +770,77 @@ def _well_explore_result(state, profile):
     return effect, gains[bonus]
 
 
+_WELL_OBJECT_ID = WorldObjectId("goblin", "location/well")
+
+
+def _capture_well_trace_memory(state: GameState) -> tuple[ObjectTraceMap, MemoryState]:
+    """Derive the F-3 well trace/memory candidate from action-after state."""
+    from .knowledge import KNOWN_COMPLETED_ACTIONS, goblin_knowledge_catalog
+
+    catalog = goblin_knowledge_catalog()
+    current_trace = state.object_traces.get(_WELL_OBJECT_ID) or ObjectTraceState()
+    remembered = remember_visible_facts(
+        object_id=_WELL_OBJECT_ID,
+        current_lod=_current_well_lod(state),
+        trace=current_trace,
+        catalog=catalog,
+    )
+    traces = update_object_trace_map(
+        state.object_traces,
+        object_id=_WELL_OBJECT_ID,
+        trace=remembered,
+        catalog=catalog,
+    )
+    derived = derive_memory_tags(
+        object_traces=dict(traces.entries),
+        completed_actions=(
+            state.completed_village_actions & KNOWN_COMPLETED_ACTIONS
+        ),
+        catalog=catalog,
+    )
+    memory = remember_derived_memory(state.memory_state, derived, catalog)
+    return traces, memory
+
+
+def _well_explore_candidate(state: GameState, effect, gain):
+    """Apply well exploration to an isolated mutable shell before committing."""
+    from . import village
+
+    candidate = copy.copy(state)
+    candidate.rng = Rng(state.seed)
+    candidate.rng.set_state(state.rng.state())
+    candidate.effects = list(state.effects)
+    candidate.buff_labels = list(state.buff_labels)
+    candidate.log = list(state.log)
+    candidate.presenter = None
+    village.explore(candidate, "well", effect_override=effect, gain_override=gain)
+    candidate.completed_village_actions = state.completed_village_actions | {"well"}
+    candidate.object_traces, candidate.memory_state = _capture_well_trace_memory(candidate)
+    return candidate
+
+
+def _commit_well_explore_candidate(state: GameState, candidate: GameState) -> None:
+    """Commit the already-validated well candidate without replaying side effects."""
+    state.rng = candidate.rng
+    state.effects = candidate.effects
+    state.herbs = candidate.herbs
+    state.buff_labels = candidate.buff_labels
+    state.log = candidate.log
+    state.completed_village_actions = candidate.completed_village_actions
+    state.object_traces = candidate.object_traces
+    state.memory_state = candidate.memory_state
+    if state.presenter is not None:
+        state.presenter(state.log[-1])
+
+
 def _apply_village_action(state, game_map, picked, action, *, legacy_batch=False,
                           well_effect_profile="current",
-                          village_effect_profile="all_current") -> bool:
+                          village_effect_profile="all_current",
+                          trace_memory_profile="current") -> bool:
     """Validate and apply one canonical event. Return True only for depart."""
     from . import village
+    if trace_memory_profile not in {"current", "legacy"}:
+        raise ValueError("unknown trace memory profile")
     context = _village_context(state, game_map, picked)
     if isinstance(action, SetFocusAction):
         if game_map is None:
@@ -761,13 +860,24 @@ def _apply_village_action(state, game_map, picked, action, *, legacy_batch=False
                 scenario_id=state.scenario.id, game_map=game_map,
             )
         )
-        state.lod_runtime = apply_lod_action(
+        lod_runtime = apply_lod_action(
             state.lod_runtime,
             action,
             focused_object_id=context.focused_object_id,
             focusable_object_ids=context.focusable_object_ids,
             scene_object_ids=scene_object_ids,
         )
+        if (trace_memory_profile == "current"
+                and isinstance(action, (ObserveFocusedObjectAction, InspectFocusedObjectAction))
+                and context.focused_object_id == _WELL_OBJECT_ID):
+            candidate = copy.copy(state)
+            candidate.lod_runtime = lod_runtime
+            traces, memory = _capture_well_trace_memory(candidate)
+            state.lod_runtime = lod_runtime
+            state.object_traces = traces
+            state.memory_state = memory
+        else:
+            state.lod_runtime = lod_runtime
         return False
     if isinstance(action, MovePlayerToPositionAction):
         apply_player_movement(state, action)
@@ -806,6 +916,10 @@ def _apply_village_action(state, game_map, picked, action, *, legacy_batch=False
         effect = gain = None
         if state.scenario.id == "goblin" and action.key == "well":
             effect, gain = _well_explore_result(state, well_effect_profile)
+            if trace_memory_profile == "current":
+                candidate = _well_explore_candidate(state, effect, gain)
+                _commit_well_explore_candidate(state, candidate)
+                return False
         elif state.scenario.id == "goblin" and action.key in {"shrine", "scout", "herbs", "elder"}:
             effect, gain = _village_lod_explore_result(
                 state, action.key, village_effect_profile,
@@ -852,6 +966,9 @@ def _run_village(state: GameState, controller, *, on_village_event_applied=None)
                     well_effect_profile=getattr(controller, "well_effect_profile", "current"),
                     village_effect_profile=getattr(
                         controller, "village_effect_profile", "all_current",
+                    ),
+                    trace_memory_profile=getattr(
+                        controller, "trace_memory_profile", "current",
                     ))
         except ValueError as exc:
             if hasattr(controller, "village_event_rejected"):
@@ -1653,6 +1770,8 @@ class ConsoleController:
         self.state.player_position = candidate.player_position
         self.state.lod_runtime = candidate.lod_runtime
         self.state.completed_village_actions = candidate.completed_village_actions
+        self.state.object_traces = candidate.object_traces
+        self.state.memory_state = candidate.memory_state
         if focused is None:
             self.state.clear_focused_object()
         else:

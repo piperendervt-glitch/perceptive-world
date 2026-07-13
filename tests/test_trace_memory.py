@@ -398,13 +398,17 @@ def test_module_dependency_boundary_contains_no_runtime_integration():
         assert forbidden_field not in MemoryState.__dataclass_fields__
 
 
-def test_architecture_versions_and_existing_modules_remain_unconnected():
+def test_architecture_versions_connect_runtime_without_codec_serialization():
     import trpg_core.presentation as presentation_module
     import trpg_core.record_codec as record_codec_module
     import trpg_core.session as session_module
 
     assert session_module.CURRENT_SAVE_FORMAT_VERSION == 6
     assert record_codec_module.CURRENT_RECORD_FORMAT_VERSION == 7
-    assert "trace_memory" not in inspect.getsource(session_module)
-    assert "trace_memory" not in inspect.getsource(presentation_module)
+    session_source = inspect.getsource(session_module)
+    presentation_source = inspect.getsource(presentation_module)
+    assert "from .trace_memory import" in session_source
+    assert "from .trace_memory import" in presentation_source
+    assert "serialize_object_trace" not in session_source
+    assert "serialize_memory_state" not in session_source
     assert "trace_memory" not in inspect.getsource(record_codec_module)

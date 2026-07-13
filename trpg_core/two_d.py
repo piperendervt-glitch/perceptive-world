@@ -664,13 +664,27 @@ def run_two_d_session(seed: int, scenario_id: str) -> None:
                 effect_lines.append(f"頭目への命中補正 +{player.chief_hit_bonus}")
             if player.recon_active:
                 effect_lines.append("偵察効果 有効")
-            status_lines = 8 + len(effect_lines)
+            memory_lines = []
+            if snap.focused_object_remembered_facts:
+                memory_lines.append(
+                    "記憶: " + " / ".join(
+                        fact.label for fact in snap.focused_object_remembered_facts
+                    )
+                )
+            if snap.active_memory_tags:
+                memory_lines.append(
+                    "確定した記憶: " + " / ".join(
+                        tag.label for tag in snap.active_memory_tags
+                    )
+                )
+            status_lines = 8 + len(effect_lines) + len(memory_lines)
             status_text = (
                 f"Scene: {snap.scene_title or 'なし'}\nPlayer\n{player.name}\n"
                 f"HP {player.hp} / {player.hp_max}\nMP {player.mp} / {player.mp_max}\n"
                 f"薬草 {player.recovery_item_count}\n物理ダメージ補正 +{player.physical_damage_bonus}\n"
                 + ("\n".join(effect_lines) + "\n" if effect_lines else "")
                 + f"Position: {pos}\nFocus: {focus}\nLOD: {lod}"
+                + ("\n" + "\n".join(memory_lines) if memory_lines else "")
             )
         else:
             status_lines = 1
