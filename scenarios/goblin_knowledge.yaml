@@ -1,0 +1,136 @@
+schema_version: 1
+scenario_id: goblin
+objects:
+  goblin:location/well:
+    facts:
+      shape:
+        value: well_like
+        lod: 0
+        label_key: well.shape.well_like
+      material:
+        value: stone
+        lod: 1
+        label_key: well.material.stone
+      age:
+        value: old
+        lod: 1
+        label_key: well.age.old
+      pulley:
+        value: recent
+        lod: 2
+        label_key: well.pulley.recent
+      rope:
+        value: worn
+        lod: 2
+        label_key: well.rope.worn
+      mark:
+        value: faded_emblem
+        lod: 3
+        label_key: well.mark.faded_emblem
+  goblin:location/shrine:
+    facts:
+      shape:
+        value: small_shrine
+        lod: 0
+        label_key: shrine.shape.small_shrine
+      material:
+        value: weathered_stone
+        lod: 1
+        label_key: shrine.material.weathered_stone
+      offering:
+        value: kept_clean
+        lod: 2
+        label_key: shrine.offering.kept_clean
+      condition:
+        value: quietly_usable
+        lod: 3
+        label_key: shrine.condition.quietly_usable
+  goblin:location/lookout:
+    facts:
+      shape:
+        value: lookout_tower
+        lod: 0
+        label_key: lookout.shape.lookout_tower
+      material:
+        value: timber
+        lod: 1
+        label_key: lookout.material.timber
+      view:
+        value: forest_edge_visible
+        lod: 2
+        label_key: lookout.view.forest_edge_visible
+      condition:
+        value: stable_vantage
+        lod: 3
+        label_key: lookout.condition.stable_vantage
+  goblin:location/herbhut:
+    facts:
+      shape:
+        value: small_hut
+        lod: 0
+        label_key: herbhut.shape.small_hut
+      scent:
+        value: dried_herbs
+        lod: 1
+        label_key: herbhut.scent.dried_herbs
+      stock:
+        value: prepared_bundles
+        lod: 2
+        label_key: herbhut.stock.prepared_bundles
+      condition:
+        value: carefully_sorted
+        lod: 3
+        label_key: herbhut.condition.carefully_sorted
+  goblin:location/elderhouse:
+    facts:
+      shape:
+        value: large_house
+        lod: 0
+        label_key: elderhouse.shape.large_house
+      material:
+        value: old_timber
+        lod: 1
+        label_key: elderhouse.material.old_timber
+      records:
+        value: village_notes
+        lod: 2
+        label_key: elderhouse.records.village_notes
+      condition:
+        value: orderly_meeting_place
+        lod: 3
+        label_key: elderhouse.condition.orderly_meeting_place
+memory_tags:
+  goblin:memory/well-faded-emblem:
+    required_facts:
+      - object_id: goblin:location/well
+        fact_key: mark
+    required_completed_actions: []
+    label_key: memory.well.faded_emblem
+  goblin:memory/shrine-blessing-site:
+    required_facts:
+      - object_id: goblin:location/shrine
+        fact_key: condition
+    required_completed_actions:
+      - shrine
+    label_key: memory.shrine.blessing_site
+  goblin:memory/lookout-surveyed:
+    required_facts:
+      - object_id: goblin:location/lookout
+        fact_key: view
+    required_completed_actions:
+      - scout
+    label_key: memory.lookout.surveyed
+  goblin:memory/herbhut-supplies:
+    required_facts:
+      - object_id: goblin:location/herbhut
+        fact_key: stock
+    required_completed_actions:
+      - herbs
+    label_key: memory.herbhut.supplies
+  goblin:memory/elder-intel:
+    required_facts:
+      - object_id: goblin:location/elderhouse
+        fact_key: records
+    required_completed_actions:
+      - elder
+    label_key: memory.elder.intel

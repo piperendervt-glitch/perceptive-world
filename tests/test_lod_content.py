@@ -2,6 +2,7 @@ from dataclasses import FrozenInstanceError, fields
 
 import pytest
 
+from trpg_core.knowledge import goblin_knowledge_catalog
 from trpg_core.lod import (
     ObjectAttentionState,
     ObjectLodSpec,
@@ -11,7 +12,6 @@ from trpg_core.lod import (
     derive_current_lod,
 )
 from trpg_core.lod_content import (
-    GOBLIN_WELL_LOD_CONTENT,
     ObjectLodContentSpec,
     fact_partition_for_lod,
     lod_content_for_world_object,
@@ -23,6 +23,11 @@ from trpg_core.world import (
     WorldObjectId,
     partition_world_object_facts,
     serialize_world_object_id,
+)
+
+
+GOBLIN_WELL_LOD_CONTENT = lod_content_for_world_object(
+    WorldObjectId("goblin", "location/well"),
 )
 
 
@@ -164,6 +169,18 @@ def test_content_lookup_is_exact_and_has_no_fallback():
     assert lod_content_for_world_object(WorldObjectId("goblin", "location/well-mark")) is None
     with pytest.raises(ValueError):
         lod_content_for_world_object("goblin:location/well")
+
+
+def test_yaml_catalog_adapter_preserves_every_fact_and_cumulative_lod():
+    for knowledge_object in goblin_knowledge_catalog().objects:
+        content = lod_content_for_world_object(knowledge_object.object_id)
+        assert tuple((fact.key, fact.value) for fact in content.facts) == tuple(
+            (fact.key, fact.value) for fact in knowledge_object.facts
+        )
+        assert content.visible_fact_keys_by_lod == tuple(
+            tuple(fact.key for fact in knowledge_object.facts if fact.lod <= lod)
+            for lod in range(4)
+        )
 
 
 @pytest.mark.parametrize("attention, cap, lod, keys", [

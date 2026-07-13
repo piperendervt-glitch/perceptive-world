@@ -7,6 +7,7 @@ import dataclasses
 
 import pytest
 
+from trpg_core.knowledge import goblin_knowledge_catalog
 from trpg_core.map import build_map
 from trpg_core.presentation import (
     FocusedObjectLodView,
@@ -31,6 +32,7 @@ from trpg_core.lod_content import lod_content_for_world_object
 from trpg_core.world import WorldFact, WorldObjectId
 from trpg_core.presentation import (
     focused_object_lod_view, visual_asset_key_for_object,
+    knowledge_presentation_label,
     visible_world_fact_view,
     presentation_label_for_object,
 )
@@ -302,6 +304,42 @@ def test_unknown_object_label_mapping_remains_closed():
         presentation_label_for_object(unknown)
     with pytest.raises(ValueError, match="no presentation label mapping"):
         visible_world_fact_view(unknown, WorldFact("shape", "small_hut"))
+
+
+def test_knowledge_label_mapping_is_closed_without_raw_fallback():
+    expected = {
+        "well.shape.well_like": "井戸らしき形", "well.material.stone": "石造り",
+        "well.age.old": "古い", "well.pulley.recent": "新しい滑車",
+        "well.rope.worn": "擦り切れた縄", "well.mark.faded_emblem": "消えかけた紋章",
+        "shrine.shape.small_shrine": "小さな祠",
+        "shrine.material.weathered_stone": "風雨にさらされた石造り",
+        "shrine.offering.kept_clean": "供物台は清められている",
+        "shrine.condition.quietly_usable": "静かに祈りを捧げられる",
+        "lookout.shape.lookout_tower": "物見櫓", "lookout.material.timber": "木造",
+        "lookout.view.forest_edge_visible": "森の縁を見渡せる",
+        "lookout.condition.stable_vantage": "足場は見張りに使える",
+        "herbhut.shape.small_hut": "小さな小屋",
+        "herbhut.scent.dried_herbs": "乾燥薬草の香り",
+        "herbhut.stock.prepared_bundles": "薬草の束が用意されている",
+        "herbhut.condition.carefully_sorted": "薬草は丁寧に選別されている",
+        "elderhouse.shape.large_house": "大きな家",
+        "elderhouse.material.old_timber": "年季の入った木造",
+        "elderhouse.records.village_notes": "村の記録が置かれている",
+        "elderhouse.condition.orderly_meeting_place": "話を聞けるよう整えられている",
+        "memory.well.faded_emblem": "消えかけた紋章の記憶",
+        "memory.shrine.blessing_site": "祈りを捧げられる場所の記憶",
+        "memory.lookout.surveyed": "物見櫓から見渡した記憶",
+        "memory.herbhut.supplies": "用意された薬草の記憶",
+        "memory.elder.intel": "村の記録を確かめた記憶",
+    }
+    catalog = goblin_knowledge_catalog()
+    keys = tuple(
+        fact.label_key for item in catalog.objects for fact in item.facts
+    ) + tuple(tag.label_key for tag in catalog.memory_tags)
+    assert set(keys) == set(expected)
+    assert {key: knowledge_presentation_label(key) for key in keys} == expected
+    with pytest.raises(ValueError, match="no knowledge presentation label"):
+        knowledge_presentation_label("raw.unknown.label")
 
 
 @pytest.mark.parametrize("attention, cap, lod, keys", [

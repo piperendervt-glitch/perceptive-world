@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
+from .knowledge import goblin_knowledge_catalog
 from .lod import derive_current_lod
 from .lod_actions import (
     LodRuntimeState,
@@ -70,38 +71,41 @@ class FocusedObjectLodView:
 
 
 _OBJECT_PRESENTATION_LABELS = {
-    WorldObjectId("goblin", "location/well"): ("古井戸", (
-        ("shape", "well_like", "井戸らしき形"),
-        ("material", "stone", "石造り"),
-        ("age", "old", "古い"),
-        ("pulley", "recent", "新しい滑車"),
-        ("rope", "worn", "擦り切れた縄"),
-        ("mark", "faded_emblem", "消えかけた紋章"),
-    )),
-    WorldObjectId("goblin", "location/shrine"): ("古い祠", (
-        ("shape", "small_shrine", "小さな祠"),
-        ("material", "weathered_stone", "風雨にさらされた石造り"),
-        ("offering", "kept_clean", "供物台は清められている"),
-        ("condition", "quietly_usable", "静かに祈りを捧げられる"),
-    )),
-    WorldObjectId("goblin", "location/lookout"): ("物見櫓", (
-        ("shape", "lookout_tower", "物見櫓"),
-        ("material", "timber", "木造"),
-        ("view", "forest_edge_visible", "森の縁を見渡せる"),
-        ("condition", "stable_vantage", "足場は見張りに使える"),
-    )),
-    WorldObjectId("goblin", "location/herbhut"): ("薬草小屋", (
-        ("shape", "small_hut", "小さな小屋"),
-        ("scent", "dried_herbs", "乾燥薬草の香り"),
-        ("stock", "prepared_bundles", "薬草の束が用意されている"),
-        ("condition", "carefully_sorted", "薬草は丁寧に選別されている"),
-    )),
-    WorldObjectId("goblin", "location/elderhouse"): ("村長の家", (
-        ("shape", "large_house", "大きな家"),
-        ("material", "old_timber", "年季の入った木造"),
-        ("records", "village_notes", "村の記録が置かれている"),
-        ("condition", "orderly_meeting_place", "話を聞けるよう整えられている"),
-    )),
+    WorldObjectId("goblin", "location/well"): "古井戸",
+    WorldObjectId("goblin", "location/shrine"): "古い祠",
+    WorldObjectId("goblin", "location/lookout"): "物見櫓",
+    WorldObjectId("goblin", "location/herbhut"): "薬草小屋",
+    WorldObjectId("goblin", "location/elderhouse"): "村長の家",
+}
+
+_KNOWLEDGE_PRESENTATION_LABELS = {
+    "well.shape.well_like": "井戸らしき形",
+    "well.material.stone": "石造り",
+    "well.age.old": "古い",
+    "well.pulley.recent": "新しい滑車",
+    "well.rope.worn": "擦り切れた縄",
+    "well.mark.faded_emblem": "消えかけた紋章",
+    "shrine.shape.small_shrine": "小さな祠",
+    "shrine.material.weathered_stone": "風雨にさらされた石造り",
+    "shrine.offering.kept_clean": "供物台は清められている",
+    "shrine.condition.quietly_usable": "静かに祈りを捧げられる",
+    "lookout.shape.lookout_tower": "物見櫓",
+    "lookout.material.timber": "木造",
+    "lookout.view.forest_edge_visible": "森の縁を見渡せる",
+    "lookout.condition.stable_vantage": "足場は見張りに使える",
+    "herbhut.shape.small_hut": "小さな小屋",
+    "herbhut.scent.dried_herbs": "乾燥薬草の香り",
+    "herbhut.stock.prepared_bundles": "薬草の束が用意されている",
+    "herbhut.condition.carefully_sorted": "薬草は丁寧に選別されている",
+    "elderhouse.shape.large_house": "大きな家",
+    "elderhouse.material.old_timber": "年季の入った木造",
+    "elderhouse.records.village_notes": "村の記録が置かれている",
+    "elderhouse.condition.orderly_meeting_place": "話を聞けるよう整えられている",
+    "memory.well.faded_emblem": "消えかけた紋章の記憶",
+    "memory.shrine.blessing_site": "祈りを捧げられる場所の記憶",
+    "memory.lookout.surveyed": "物見櫓から見渡した記憶",
+    "memory.herbhut.supplies": "用意された薬草の記憶",
+    "memory.elder.intel": "村の記録を確かめた記憶",
 }
 
 
@@ -111,20 +115,36 @@ def presentation_label_for_object(object_id: WorldObjectId) -> str:
     mapped = _OBJECT_PRESENTATION_LABELS.get(object_id)
     if mapped is None:
         raise ValueError("no presentation label mapping for object")
-    return mapped[0]
+    return mapped
+
+
+def knowledge_presentation_label(label_key: str) -> str:
+    """Resolve a closed knowledge label without exposing a raw-key fallback."""
+
+    if not isinstance(label_key, str) or not label_key or label_key != label_key.strip():
+        raise ValueError("exact knowledge label key is required")
+    label = _KNOWLEDGE_PRESENTATION_LABELS.get(label_key)
+    if label is None:
+        raise ValueError("no knowledge presentation label mapping")
+    return label
 
 
 def visible_world_fact_view(object_id: WorldObjectId, fact: WorldFact) -> VisibleWorldFactView:
     if not isinstance(object_id, WorldObjectId) or not isinstance(fact, WorldFact):
         raise ValueError("exact WorldObjectId and WorldFact are required")
-    mapped = _OBJECT_PRESENTATION_LABELS.get(object_id)
-    if mapped is None:
+    if object_id.scenario_id != "goblin":
         raise ValueError("no presentation label mapping for object")
-    label = next((label for key, value, label in mapped[1]
-                  if key == fact.key and value == fact.value), None)
-    if label is None:
+    knowledge_object = goblin_knowledge_catalog().object(object_id)
+    if knowledge_object is None:
+        raise ValueError("no presentation label mapping for object")
+    spec = knowledge_object.fact(fact.key)
+    if spec is None or spec.value != fact.value:
         raise ValueError("no exact presentation label mapping for fact")
-    return VisibleWorldFactView(fact.key, fact.value, label)
+    return VisibleWorldFactView(
+        fact.key,
+        fact.value,
+        knowledge_presentation_label(spec.label_key),
+    )
 
 
 def focused_object_lod_view(

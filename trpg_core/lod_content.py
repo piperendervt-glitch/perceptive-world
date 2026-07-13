@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 
+from .knowledge import KnowledgeObjectSpec, goblin_knowledge_catalog
 from .lod import ObjectLodSpec
 from .world import (
     VisibleWorldObjectFacts,
@@ -90,73 +92,32 @@ def visible_facts_for_lod(
     return VisibleWorldObjectFacts(fact_partition_for_lod(content, lod).visible)
 
 
-GOBLIN_WELL_LOD_CONTENT = ObjectLodContentSpec(
-    lod_spec=ObjectLodSpec(
-        object_id=WorldObjectId("goblin", "location/well"),
-        attention_thresholds=(0, 1, 3, 6),
-    ),
-    facts=(
-        WorldFact("shape", "well_like"),
-        WorldFact("material", "stone"),
-        WorldFact("age", "old"),
-        WorldFact("pulley", "recent"),
-        WorldFact("rope", "worn"),
-        WorldFact("mark", "faded_emblem"),
-    ),
-    visible_fact_keys_by_lod=(
-        ("shape",),
-        ("shape", "material", "age"),
-        ("shape", "material", "age", "pulley", "rope"),
-        ("shape", "material", "age", "pulley", "rope", "mark"),
-    ),
-)
+def _content_from_knowledge(spec: KnowledgeObjectSpec) -> ObjectLodContentSpec:
+    """Adapt one immutable knowledge object without creating another authority."""
 
-
-def _village_content(scene: str, facts: tuple[WorldFact, ...]) -> ObjectLodContentSpec:
-    keys = tuple(fact.key for fact in facts)
+    facts = tuple(WorldFact(fact.key, fact.value) for fact in spec.facts)
     return ObjectLodContentSpec(
         ObjectLodSpec(
-            WorldObjectId("goblin", f"location/{scene}"),
+            spec.object_id,
             attention_thresholds=(0, 1, 3, 6),
         ),
         facts,
-        ((keys[0],), keys[:2], keys[:3], keys),
+        tuple(
+            tuple(fact.key for fact in spec.facts if fact.lod <= lod)
+            for lod in range(4)
+        ),
     )
 
 
-GOBLIN_SHRINE_LOD_CONTENT = _village_content("shrine", (
-    WorldFact("shape", "small_shrine"),
-    WorldFact("material", "weathered_stone"),
-    WorldFact("offering", "kept_clean"),
-    WorldFact("condition", "quietly_usable"),
-))
-GOBLIN_LOOKOUT_LOD_CONTENT = _village_content("lookout", (
-    WorldFact("shape", "lookout_tower"),
-    WorldFact("material", "timber"),
-    WorldFact("view", "forest_edge_visible"),
-    WorldFact("condition", "stable_vantage"),
-))
-GOBLIN_HERBHUT_LOD_CONTENT = _village_content("herbhut", (
-    WorldFact("shape", "small_hut"),
-    WorldFact("scent", "dried_herbs"),
-    WorldFact("stock", "prepared_bundles"),
-    WorldFact("condition", "carefully_sorted"),
-))
-GOBLIN_ELDERHOUSE_LOD_CONTENT = _village_content("elderhouse", (
-    WorldFact("shape", "large_house"),
-    WorldFact("material", "old_timber"),
-    WorldFact("records", "village_notes"),
-    WorldFact("condition", "orderly_meeting_place"),
-))
+@lru_cache(maxsize=1)
+def _cached_goblin_lod_contents() -> tuple[ObjectLodContentSpec, ...]:
+    return tuple(_content_from_knowledge(spec) for spec in goblin_knowledge_catalog().objects)
 
 
-_LOD_CONTENT = (
-    GOBLIN_WELL_LOD_CONTENT,
-    GOBLIN_SHRINE_LOD_CONTENT,
-    GOBLIN_LOOKOUT_LOD_CONTENT,
-    GOBLIN_HERBHUT_LOD_CONTENT,
-    GOBLIN_ELDERHOUSE_LOD_CONTENT,
-)
+def goblin_lod_contents() -> tuple[ObjectLodContentSpec, ...]:
+    """Build the complete production LOD catalog lazily from knowledge YAML."""
+
+    return _cached_goblin_lod_contents()
 
 
 def lod_content_for_world_object(
@@ -166,8 +127,10 @@ def lod_content_for_world_object(
 
     if not isinstance(object_id, WorldObjectId):
         raise ValueError("object_id must be a WorldObjectId")
+    if object_id.scenario_id != "goblin":
+        return None
     return next(
-        (content for content in _LOD_CONTENT
+        (content for content in goblin_lod_contents()
          if content.lod_spec.object_id == object_id),
         None,
     )

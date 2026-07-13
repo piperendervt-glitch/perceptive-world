@@ -17,13 +17,14 @@ from trpg_core.lod_actions import (
     lod_progress_for_world_object,
 )
 from trpg_core.lod_content import (
-    GOBLIN_WELL_LOD_CONTENT,
+    lod_content_for_world_object,
     visible_facts_for_lod,
 )
 from trpg_core.world import WorldObjectId
 
 
 WELL = WorldObjectId("goblin", "location/well")
+GOBLIN_WELL_LOD_CONTENT = lod_content_for_world_object(WELL)
 CONTEXT = dict(
     focused_object_id=WELL,
     focusable_object_ids=(WELL,),
